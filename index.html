@@ -143,14 +143,19 @@
               <small id="precio-venta-echo" class="echo"></small>
             </div>
             <div class="field" id="campo-relacion">
-              <label for="relacion">Relación de conversión <span class="unit" id="relacion-unidad">unidades de destino por unidad de origen</span></label>
-              <div class="with-action">
-                <input id="relacion" name="relacionConversion" type="text" inputmode="decimal" placeholder="No sé" aria-describedby="relacion-echo relacion-hint">
-                <button type="button" class="btn ghost small" id="relacion-probar">Probar 1 a 1 como hipótesis</button>
+              <label for="conversion"><span id="conversion-pregunta">Cuánto te cobran al pasar de un dólar al otro</span> <span class="unit" id="relacion-unidad">% de lo que pasás</span></label>
+              <div class="with-action conversion">
+                <select id="conversion-sentido" name="conversionSentido" aria-label="Te cobran o te dan de más">
+                  <option value="cobran">Te cobran</option>
+                  <option value="dan">Te dan de más</option>
+                </select>
+                <input id="conversion" name="conversionPct" type="text" inputmode="decimal" placeholder="No sé" aria-describedby="conversion-echo relacion-hint">
+                <span class="unit" aria-hidden="true">%</span>
               </div>
-              <label class="check"><input type="checkbox" id="relacion-hipotesis"> Es una hipótesis (no la confirmé)</label>
+              <button type="button" class="btn ghost small" id="relacion-probar">Probar sin costo (0 %) como hipótesis</button>
+              <label class="check"><input type="checkbox" id="relacion-hipotesis"> Es una hipótesis (no lo confirmé)</label>
               <small id="relacion-hint" class="hint"></small>
-              <small id="relacion-echo" class="echo"></small>
+              <small id="conversion-echo" class="echo"></small>
             </div>
           </fieldset>
 

@@ -5,7 +5,8 @@ import { calcularMatriz } from '../engine/matrix.mjs';
 import { ordenarOportunidades, CRITERIOS, GRUPOS } from '../engine/ranking.mjs';
 import { formatPct, formatARSSigned, formatARS, formatNumberAR } from '../engine/format.mjs';
 import { toDec } from '../engine/decimal.mjs';
-import { TRATAMIENTOS } from '../engine/costos.mjs';
+import { TRATAMIENTOS, esNoAplica } from '../engine/costos.mjs';
+import { SENTIDOS_CONVERSION } from '../engine/conversion.mjs';
 import { MERCADOS, IDS_MERCADOS, mercadoPorId } from '../quotes/markets.mjs';
 import { ACTIVOS, corto } from '../routes/activos.mjs';
 import { CAMPOS_MERCADO, MAX_CONVERSIONES, restaurarPerfil, normalizarPerfil, nuevaConversion } from '../routes/perfil.mjs';
@@ -183,9 +184,10 @@ export function crearOportunidades({ root, getMercados, estadoDe, storage, getSe
         <select data-conv="${i}.desde" aria-label="Conversión ${i + 1}: desde">${opts(v.desde)}</select>
         <span aria-hidden="true">→</span>
         <select data-conv="${i}.hacia" aria-label="Conversión ${i + 1}: hacia">${opts(v.hacia)}</select>
-        <input type="text" inputmode="decimal" data-conv="${i}.relacion" value="${esc(v.relacion)}" placeholder="Relación (obligatoria)" aria-label="Conversión ${i + 1}: relación (unidades de destino por 1 de origen)">
+        <select data-conv="${i}.sentido" aria-label="Conversión ${i + 1}: te cobran o te dan de más">${Object.entries(SENTIDOS_CONVERSION).map(([k, t]) => `<option value="${k}"${k === (v.sentido ?? 'cobran') ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>
+        <input type="text" inputmode="decimal" data-conv="${i}.costoPct" value="${esc(v.costoPct ?? '')}" placeholder="% (obligatorio)" aria-label="Conversión ${i + 1}: % que te cobran al pasar de ${esc(corto(v.desde))} a ${esc(corto(v.hacia))}">
         <label class="check"><input type="checkbox" data-conv="${i}.hipotesis"${v.hipotesis ? ' checked' : ''}> Hipótesis</label>
-        <input type="text" inputmode="decimal" data-conv="${i}.comisionPct" value="${esc(v.comisionPct)}" placeholder="Comisión %: no sé" aria-label="Conversión ${i + 1}: comisión %">
+        ${esNoAplica(v.comisionPct) ? '' : `<input type="text" inputmode="decimal" data-conv="${i}.comisionPct" value="${esc(v.comisionPct)}" placeholder="Comisión aparte %: no sé" aria-label="Conversión ${i + 1}: comisión aparte % (de antes)">`}
         <input type="text" inputmode="decimal" data-conv="${i}.fijoDestino" value="${esc(v.fijoDestino)}" placeholder="Fijo en ${esc(corto(v.hacia))}: no sé" aria-label="Conversión ${i + 1}: costo fijo en ${esc(corto(v.hacia))}">
         <button type="button" class="btn ghost small" data-accion="quitar-conv" data-i="${i}" aria-label="Quitar conversión ${i + 1}">Quitar</button>
       </li>`).join('');
@@ -195,7 +197,7 @@ export function crearOportunidades({ root, getMercados, estadoDe, storage, getSe
       <p class="hint">Vacío = <strong>No sé</strong> (la celda sale incompleta, como cota máxima). 0 = sin costo, confirmado. Escribí «no aplica» si ese costo no existe. Las comisiones y los impuestos de compra se cobran encima de lo que pagás; la comisión de venta se descuenta de lo que recibís.</p>
       <div class="table-wrap"><table class="costos"><thead><tr><th scope="col">Mercado</th>${CAMPOS_MERCADO.map((c) => `<th scope="col">${c.label} <span class="unit">${c.unidad}</span></th>`).join('')}<th scope="col">Tratamiento de los impuestos</th><th scope="col"><span class="sr-only">Acciones</span></th></tr></thead><tbody>${filas}</tbody></table></div>
       <p class="sub">Conversiones entre instrumentos</p>
-      <p class="hint">Si una combinación compra un dólar y vende otro (por ejemplo oficial → CCL), necesita la conversión entre los dos: cuántas unidades del segundo recibís por 1 del primero. <strong>Sin esa conversión la combinación no tiene resultado</strong> (no se supone 1 a 1). Si no sabés el valor, podés cargar un supuesto marcándolo como hipótesis: la celda queda como estimada (≈).</p>
+      <p class="hint">Si una combinación compra un dólar y vende otro (por ejemplo oficial → CCL), necesita la conversión entre los dos: el <strong>% que te cobran</strong> por pasar de uno al otro, con todo incluido (0 si es gratis). <strong>Sin ese dato la combinación no tiene resultado</strong> (nunca se supone gratis). Si no lo sabés, podés cargar un supuesto marcándolo como hipótesis: la celda queda como estimada (≈). El costo fijo es aparte, en el activo que recibís (por ejemplo, la comisión de red).</p>
       <ul class="convs">${convs}</ul>
       <button type="button" class="btn ghost small" data-accion="agregar-conv"${p.conversiones.length >= MAX_CONVERSIONES ? ' disabled' : ''}>+ Agregar conversión</button>`;
   }
@@ -231,7 +233,7 @@ export function crearOportunidades({ root, getMercados, estadoDe, storage, getSe
     if (vista === 'bruta') vista = 'neta';
     render();
     el.costos.open = true;
-    root.querySelector(`[data-conv="${i}.relacion"]`)?.focus();
+    root.querySelector(`[data-conv="${i}.costoPct"]`)?.focus();
   }
 
   root.addEventListener('click', (ev) => {
@@ -248,7 +250,7 @@ export function crearOportunidades({ root, getMercados, estadoDe, storage, getSe
       perfil.conversiones.push(nuevaConversion());
       guardarPerfil();
       renderCostos();
-      root.querySelector(`[data-conv="${perfil.conversiones.length - 1}.relacion"]`)?.focus();
+      root.querySelector(`[data-conv="${perfil.conversiones.length - 1}.costoPct"]`)?.focus();
       return render();
     }
     if (acc?.dataset.accion === 'quitar-conv') {

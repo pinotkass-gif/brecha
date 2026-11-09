@@ -531,3 +531,8 @@ html[data-plataforma="celular"] .barra {
 }
 html[data-plataforma="celular"] .toast { bottom: calc(var(--alto-pestanas) + 84px + env(safe-area-inset-bottom, 0px)); }
 html[data-plataforma="celular"] .foot { padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); }
+
+/* Conversión: "Te cobran ▾  [ 1,5 ] %" en una sola línea */
+.with-action.conversion select { flex: 0 0 auto; width: auto; }
+.with-action.conversion input { flex: 1 1 90px; min-width: 0; }
+#relacion-probar { align-self: flex-start; }

@@ -5,6 +5,7 @@ import { toDec, plain } from '../engine/decimal.mjs';
 import { NO_APLICA, esNoAplica } from '../engine/costos.mjs';
 import { estadoCostoTexto, opcionesFiscal, bloqueCalidad, bloqueEconomico, bloqueExplicacion, tablaObjetivos, prefijoResultado, tono, tituloResultado } from './comun.mjs';
 import { explicarSimple } from '../engine/explicacion.mjs';
+import { relacionDesdePct, pctDesdeRelacion } from '../engine/conversion.mjs';
 import { MERCADOS, IDS_MERCADOS, mercadoPorId } from '../quotes/markets.mjs';
 import { proveedorPorDefecto } from '../quotes/providers/index.mjs';
 import { consultarConReintentos, puedeConsultar, POLITICA_CONSULTA } from '../quotes/cliente.mjs';
@@ -114,7 +115,8 @@ const CAMPOS = [
   { key: 'cotizacionBase', el: 'cotizacion-base', kind: () => 'money' },
   { key: 'aumentoPct', el: 'aumento', kind: () => 'percent' },
   { key: 'precioVenta', el: 'precio-venta', kind: () => 'money' },
-  { key: 'relacionConversion', el: 'relacion', kind: () => 'ratio' },
+  // La conversión se carga como "% que te cobran" (o te dan de más); el motor recibe la relación equivalente.
+  { key: 'relacionConversion', el: 'conversion', kind: () => 'percent', conversion: true },
   { key: 'comisionCompraPct', el: 'com-compra', kind: () => 'percent', costo: true },
   { key: 'comisionVentaPct', el: 'com-venta', kind: () => 'percent', costo: true },
   { key: 'impuestoCompraPct', el: 'impuesto', kind: () => 'percent', costo: true },
@@ -123,7 +125,9 @@ const CAMPOS = [
   { key: 'costoTransferencia', el: 'transf', kind: () => kindCobro('#transf-cobro'), costo: true, cobro: '#transf-cobro' },
   { key: 'slippageVentaPct', el: 'slippage', kind: () => 'percent', costo: true },
 ];
-const SELECTS = ['modo-monto', 'mercado-compra', 'mercado-venta', 'otros-cobro', 'transf-cobro', 'impuesto-fiscal', 'iva-fiscal'];
+const SELECTS = ['modo-monto', 'mercado-compra', 'mercado-venta', 'conversion-sentido', 'otros-cobro', 'transf-cobro', 'impuesto-fiscal', 'iva-fiscal'];
+/** Cómo se nombra cada mercado al hablar de la conversión ("pasar de dólar oficial a USDT/USDC"). */
+const NOMBRE_CONVERSION = { oficial: 'dólar oficial', blue: 'dólar blue (billete)', mep: 'dólar MEP', ccl: 'dólar CCL (cable)', cripto: 'USDT/USDC' };
 const CHECKS = ['relacion-hipotesis'];
 /** Campo del motor → id del input (para los botones "No aplica" / "Cargar" del resultado). */
 const INPUT_DE = Object.fromEntries(CAMPOS.map((c) => [c.key, c.el]));
@@ -382,20 +386,23 @@ function llenarSelects() {
   $('#iva-fiscal').innerHTML = opcionesFiscal('pendiente');
 }
 
-/** Textos de la relación de conversión y de los cobros según los instrumentos elegidos. */
+/** Textos de la conversión y de los cobros según los mercados elegidos. */
 function actualizarEtiquetas() {
   const a = mercadoPorId($('#mercado-compra').value);
   const b = mercadoPorId($('#mercado-venta').value);
   const mismo = mismoInstrumento();
-  const rel = $('#relacion');
-  rel.disabled = mismo;
+  const na = NOMBRE_CONVERSION[a.id] ?? a.nombre;
+  const nb = NOMBRE_CONVERSION[b.id] ?? b.nombre;
+  $('#conversion').disabled = mismo;
+  $('#conversion-sentido').disabled = mismo;
   $('#relacion-probar').hidden = mismo;
   $('#relacion-hipotesis').disabled = mismo;
   $('#campo-relacion').classList.toggle('requerido', !mismo);
-  $('#relacion-unidad').textContent = mismo ? 'no hace falta: comprás y vendés el mismo instrumento' : `${b.instrumento} por cada 1 ${a.instrumento} (obligatoria)`;
+  $('#conversion-pregunta').textContent = mismo ? 'Conversión' : `¿Cuánto te cobran por pasar de ${na} a ${nb}?`;
+  $('#relacion-unidad').textContent = mismo ? 'no hace falta: comprás y vendés el mismo dólar' : '% de lo que pasás (obligatorio)';
   $('#relacion-hint').textContent = mismo
     ? ''
-    : `Comprás ${a.instrumento} y vendés ${b.instrumento}: no son lo mismo. Cargá cuánto recibís del segundo por cada unidad del primero (por ejemplo 0,99 si se pierde 1 %). Si no lo sabés, no hay resultado; podés probar un supuesto marcándolo como hipótesis.`;
+    : `Comprás ${a.instrumento} y vendés ${b.instrumento}: no son lo mismo, y pasar de uno al otro suele tener un costo. Cargá el % que te cobran en esa operación (por ejemplo 1,5). Si no te cobran nada, poné 0. Si no lo sabés, no hay resultado; podés probar sin costo marcándolo como hipótesis.`;
   for (const id of ['otros-cobro', 'transf-cobro']) {
     for (const o of $(`#${id}`).options) {
       const c = COBROS_FIJOS[o.value];
@@ -469,11 +476,27 @@ function echo(campo, raw, p, kind) {
     return;
   }
   if (p.empty) {
-    el.textContent = campo.key === 'relacionConversion' && !mismoInstrumento() ? 'No sé: sin este dato no hay resultado (no se supone 1 a 1)' : '';
+    el.textContent = campo.conversion && !mismoInstrumento() ? 'No sé: sin este dato no hay resultado (nunca se supone que pasar de un dólar al otro es gratis)' : '';
     if (el.textContent) el.classList.add('nose');
     return;
   }
+  if (campo.conversion) return echoConversion(el, input, p.value);
   el.textContent = `= ${formatoCampo(campo, kind)(p.value)}`;
+}
+
+/** Texto de abajo del % de la conversión: qué significa en unidades ("por cada 100 USD recibís 98,5 USDT/USDC"). */
+function echoConversion(el, input, pctValor) {
+  const r = relacionDesdePct(pctValor, $('#conversion-sentido').value);
+  if (!r.ok) {
+    el.textContent = r.error;
+    el.classList.add('bad');
+    input.setAttribute('aria-invalid', 'true');
+    return;
+  }
+  const ua = mercadoPorId($('#mercado-compra').value).unidad;
+  const ub = mercadoPorId($('#mercado-venta').value).unidad;
+  if (toDec(pctValor).eq(0)) { el.textContent = `Sin costo: por cada 100 ${ua} recibís 100 ${ub}`; el.classList.add('cero'); return; }
+  el.textContent = `= por cada 100 ${ua} recibís ${formatNumberAR(r.relacion.times(100), { decimals: 6, minDecimals: 0 })} ${ub}`;
 }
 
 function leerFormulario() {
@@ -485,6 +508,10 @@ function leerFormulario() {
     const p = parseNumberAR(raw, { kind });
     echo(campo, raw, p, kind);
     entrada[campo.key] = campo.costo && esNoAplica(raw) ? NO_APLICA : !p.ok ? INVALIDO : p.empty ? null : p.value;
+    if (campo.conversion && p.ok && !p.empty) {
+      const r = relacionDesdePct(p.value, $('#conversion-sentido').value);
+      entrada[campo.key] = r.ok ? r.relacion : INVALIDO;
+    }
   }
   entrada.otrosCostos = { monto: entrada.otrosCostos, cobro: $('#otros-cobro').value };
   entrada.costoTransferencia = { monto: entrada.costoTransferencia, cobro: $('#transf-cobro').value };
@@ -529,14 +556,33 @@ function aplicarFormulario(d) {
   }
   for (const k of CHECKS) document.getElementById(k).checked = d.checks?.[k] === true;
   let convertido = false;
-  if (v1 && document.getElementById('relacion').value.trim() === '1') {
-    document.getElementById('relacion').value = '';
-    convertido = true;
+  // Antes la conversión se guardaba como relación ("relacion": 0,985): se pasa al % exacto que te cobran.
+  if (typeof d.campos?.conversion !== 'string' && typeof d.campos?.relacion === 'string') {
+    const m = conversionDesdeRelacionVieja(d.campos.relacion, v1);
+    $('#conversion').value = m.texto;
+    $('#conversion-sentido').value = m.sentido;
+    if (m.aviso) sim.avisoConversion = m.aviso;
+    if (v1 && d.campos.relacion.trim() === '1') convertido = true;
   }
   sim.overrideBase = d.overrideBase === true;
   sim.overrideVenta = d.overrideVenta === true;
   if (d.masCostos) $('#mas-costos').open = true;
   return convertido || v1;
+}
+
+/**
+ * Una relación guardada con la versión anterior (unidades que recibís por cada una) → % que te cobran.
+ * El "1" que venía por defecto en la versión 1 no se conserva (sería suponer que la conversión es gratis).
+ * @returns {{texto: string, sentido: 'cobran'|'dan', aviso: string|null, relacion: *}}
+ */
+function conversionDesdeRelacionVieja(raw, v1 = false) {
+  const t = String(raw ?? '').trim();
+  if (!t || (v1 && t === '1')) return { texto: '', sentido: 'cobran', aviso: null, relacion: null };
+  const p = parseNumberAR(t, { kind: 'ratio' });
+  if (!p.ok || p.empty || p.value.lte(0)) return { texto: '', sentido: 'cobran', aviso: `No pude pasar la relación de conversión guardada («${t}») a %: cargá cuánto te cobran.`, relacion: null };
+  const { sentido, pct } = pctDesdeRelacion(p.value);
+  const texto = formatNumberAR(pct, { decimals: 12, minDecimals: 0 });
+  return { texto, sentido, relacion: p.value, aviso: `La conversión ahora se carga como el % que te cobran: tu relación ${t} quedó como «${sentido === 'cobran' ? 'te cobran' : 'te dan de más'} ${texto} %» (es lo mismo).` };
 }
 
 function restaurarFormulario() {
@@ -561,7 +607,7 @@ function advertenciasDeRuta(compra, venta, entrada) {
   }
   const r = entrada.relacionConversion;
   if (compra !== venta && entrada.relacionHipotesis && r && r !== INVALIDO && toDec(r).eq(1)) {
-    out.push(`Probás con 1 ${a.instrumento} = 1 ${b.instrumento}: es una hipótesis, no un dato. Cargá la conversión real y sus costos.`);
+    out.push(`Probás sin costo para pasar de ${NOMBRE_CONVERSION[compra] ?? a.instrumento} a ${NOMBRE_CONVERSION[venta] ?? b.instrumento} (0 %): es una hipótesis, no un dato. Cargá el % que te cobran de verdad.`);
   }
   for (const [id, punta, ov] of [[compra, 'venta', sim.overrideBase], [venta, 'compra', sim.overrideVenta]]) {
     if (ov) continue;
@@ -593,7 +639,7 @@ function renderResultado(r, entrada) {
   if (!r.ok) {
     if (r.datosInsuficientes) {
       const ayuda = r.errors.some((e) => e.field === 'relacionConversion')
-        ? '<div class="banner-actions"><button type="button" class="btn small" data-accion-simple="probar-1a1">Probar 1 a 1 como hipótesis</button> <button type="button" class="btn ghost small" data-cargar-campo="relacionConversion">Cargar la conversión</button></div>' : '';
+        ? '<div class="banner-actions"><button type="button" class="btn small" data-accion-simple="probar-1a1">Probar sin costo (0 %) como hipótesis</button> <button type="button" class="btn ghost small" data-cargar-campo="relacionConversion">Cargar el % que te cobran</button></div>' : '';
       box.innerHTML = `<h3 id="h-res" class="sr-only">Resultado</h3>${nota}${bloqueCalidad(r.calidad, { ayudaInsuficiente: ayuda })}<p class="disclaimer">${DISCLAIMER_SIMPLE}</p>`;
       return;
     }
@@ -699,8 +745,19 @@ function entradaDesdeGuardada(s) {
   const kindDe = (c) => (c.key === 'otrosCostos' ? (COBROS_FIJOS[cobroO]?.moneda === 'ARS' ? 'money' : 'ratio') : c.key === 'costoTransferencia' ? (COBROS_FIJOS[cobroT]?.moneda === 'ARS' ? 'money' : 'ratio') : c.kind());
   const e = { modoMonto: sel['modo-monto'] ?? 'unidades' };
   for (const c of CAMPOS) {
+    if (c.conversion) {
+      // Guardada con el % (nuevo) o con la relación (versión anterior): las dos dan la misma relación.
+      if (typeof campos.conversion === 'string') {
+        const p = parseNumberAR(campos.conversion, { kind: 'percent' });
+        const r = p.ok && !p.empty ? relacionDesdePct(p.value, sel['conversion-sentido'] ?? 'cobran') : null;
+        e[c.key] = !p.ok || (r && !r.ok) ? INVALIDO : r ? r.relacion : null;
+      } else {
+        const m = conversionDesdeRelacionVieja(campos.relacion ?? '', v1);
+        e[c.key] = m.relacion;
+      }
+      continue;
+    }
     const raw = campos[c.el] ?? '';
-    if (v1 && c.key === 'relacionConversion' && raw.trim() === '1') { e[c.key] = null; continue; }
     const p = parseNumberAR(raw, { kind: kindDe(c) });
     e[c.key] = c.costo && esNoAplica(raw) ? NO_APLICA : !p.ok ? INVALIDO : p.empty ? null : p.value;
   }
@@ -784,10 +841,11 @@ function bindModos() {
   });
 }
 
-/** Hipótesis explícita: 1 a 1, marcada como hipótesis (el resultado queda ESTIMADO, nunca "completo"). */
+/** Hipótesis explícita: conversión sin costo (0 %), marcada como hipótesis (el resultado queda ESTIMADO, nunca "completo"). */
 function probarUnoAUno() {
   if (mismoInstrumento()) return;
-  $('#relacion').value = '1';
+  $('#conversion').value = '0';
+  $('#conversion-sentido').value = 'cobran';
   $('#relacion-hipotesis').checked = true;
   recalcular();
 }
@@ -857,6 +915,8 @@ function capturarSimple() {
 function abrirSimple(r) {
   const s = r.entrada.simple;
   for (const c of CAMPOS) document.getElementById(c.el).value = '';
+  $('#conversion-sentido').value = 'cobran';
+  sim.avisoConversion = null;
   const convertido = aplicarFormulario({ ...s, version: s.version ?? 1 });
   sim.overrideBase = s.overrideBase;
   sim.notaGuardada = null;
@@ -869,7 +929,8 @@ function abrirSimple(r) {
   irASimulacion();
   avisar(convertido && s.version !== 3
     ? `Abriste «${r.nombre}» (guardada con la versión anterior): los costos vacíos ahora cuentan como "No sé" y la conversión ya no se supone 1 a 1.`
-    : `Abriste «${r.nombre}». Los precios son los guardados; "Usar la del mercado" trae los de hoy.`);
+    : `Abriste «${r.nombre}». Los precios son los guardados; "Usar la del mercado" trae los de hoy.${sim.avisoConversion ? ` ${sim.avisoConversion}` : ''}`);
+  sim.avisoConversion = null;
 }
 
 /**
@@ -1303,6 +1364,7 @@ function init() {
   bindTeclado();
   actualizarCotizaciones('auto');
   if (sim.avisoMigracion) avisar(sim.avisoMigracion);
+  else if (sim.avisoConversion) avisar(sim.avisoConversion);
   setInterval(refrescarEdades, 60000);
   registrarSinConexion();
   window.brechaLista = true; // arrancó: los errores posteriores ya no son "no pudo arrancar" (ver index.html)

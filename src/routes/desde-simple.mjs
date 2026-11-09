@@ -5,6 +5,16 @@
 import { calcularSimple } from '../engine/simple.mjs';
 import { NO_APLICA } from '../engine/costos.mjs';
 import { MERCADO_A_ACTIVO, corto } from './activos.mjs';
+import { pctDesdeRelacion } from '../engine/conversion.mjs';
+import { formatNumberAR } from '../engine/format.mjs';
+
+/** "te cobran 1,5 %" a partir de la relación (así se carga en la calculadora). */
+function textoCosto(R) {
+  const { sentido, pct } = pctDesdeRelacion(R);
+  const p = formatNumberAR(pct, { decimals: 6, minDecimals: 0 });
+  if (sentido === 'dan') return `te dan ${p} % de más`;
+  return pct.eq(0) ? 'sin costo (0 %)' : `te cobran ${p} %`;
+}
 
 /**
  * @param {import('../engine/simple.mjs').EntradaSimple} entradaSimple
@@ -68,13 +78,13 @@ export function rutaDesdeSimple(entradaSimple, mercadoCompra, mercadoVenta) {
       costos: [...fijosDe('descuenta_origen', 'origen'), ...fijosDe('descuenta_destino', 'destino')],
     });
     notas[1] = v.relacionHipotesis
-      ? `Relación de conversión ${corto(A1)} → ${corto(A2)} cargada como hipótesis: confirmala con tu plataforma.`
-      : 'Relación de conversión tomada de la calculadora simple.';
+      ? `Conversión ${corto(A1)} → ${corto(A2)} cargada como hipótesis (${textoCosto(R)}): confirmala con tu plataforma.`
+      : `Conversión tomada de la calculadora simple: ${textoCosto(R)} (por eso la cotización es ${formatNumberAR(R, { decimals: 8, minDecimals: 0 })}).`;
   } else {
     // Mismo activo: la relación R y los costos en unidades se aplican sobre el paso de venta.
     if (!R.eq(1)) {
       precioVenta = precioVenta.times(R);
-      notas[1] = 'La cotización incluye la relación de conversión de la calculadora simple.';
+      notas[1] = `La cotización incluye el costo de la conversión de la calculadora simple (${textoCosto(R)}).`;
     }
     for (const c of fijosDe('descuenta_origen', 'origen')) costosVenta.push(c);
     for (const c of fijosDe('descuenta_destino', 'origen')) {

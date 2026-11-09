@@ -65,11 +65,11 @@ export function calcularSimple(entrada = {}) {
   if (requiere && vacioR) {
     ctx.errors.push({
       field: 'relacionConversion', code: 'requerido',
-      message: 'Falta la relación de conversión: cuántas unidades del instrumento que vendés recibís por cada unidad del que comprás (con sus costos). Sin ese dato no se puede calcular; si querés probar un supuesto, cargalo y marcalo como hipótesis.',
+      message: 'Falta cuánto te cobran (en %) por pasar del dólar que comprás al que vendés. Si no te cobran nada, poné 0. Sin ese dato no se puede calcular: nunca se supone que la conversión es gratis. Si querés probar un supuesto, cargalo y marcalo como hipótesis.',
     });
     ctx.values.relacionConversion = null;
   } else {
-    checkField(ctx, 'relacionConversion', 'Relación de conversión', entrada.relacionConversion, { default: 1, min: 0, minExclusive: true });
+    checkField(ctx, 'relacionConversion', 'Costo de la conversión', entrada.relacionConversion, { default: 1, min: 0, minExclusive: true });
   }
 
   checkCosto(ctx, 'comisionCompraPct', 'Comisión de compra', entrada.comisionCompraPct, { min: 0, max: 100, maxExclusive: true });
@@ -195,13 +195,13 @@ export function calcularSimple(entrada = {}) {
     if (k === 'ivaComisionesPct' && ['no_aplica', 'cero'].includes(est.comisionCompraPct) && ['no_aplica', 'cero'].includes(est.comisionVentaPct)) continue;
     desconocidos.push({ campo: k, etiqueta: etiquetas[k], texto: etiquetas[k] });
   }
-  const hipotesis = entrada.relacionHipotesis === true ? [{ campo: 'relacionConversion', etiqueta: 'la relación de conversión es una hipótesis', texto: 'la relación de conversión es una hipótesis' }] : [];
+  const hipotesis = entrada.relacionHipotesis === true ? [{ campo: 'relacionConversion', etiqueta: 'el costo de la conversión es una hipótesis', texto: 'el costo de la conversión es una hipótesis' }] : [];
   const calidad = calidadDe({ desconocidos, hipotesis });
 
   // Advertencias
   if (desconocidos.length) warnings.push({ code: 'costos_desconocidos', message: `Faltan ${desconocidos.length} costos que no conocés (${desconocidos.map((d) => d.etiqueta).join(', ')}): el resultado es una cota máxima.` });
-  if (!R.eq(1)) warnings.push({ code: 'r_distinto_de_1', message: 'Con relación de conversión distinta de 1, la brecha nominal no es comparable: mirá la brecha ajustada por conversión.' });
-  if (R.lt('0.5') || R.gt(2)) warnings.push({ code: 'r_inusual', message: 'La relación de conversión es inusual: revisá que las unidades sean las correctas.' });
+  if (!R.eq(1)) warnings.push({ code: 'r_distinto_de_1', message: 'La conversión tiene costo (o te dan de más): la brecha nominal no es comparable, mirá la brecha ajustada por conversión.' });
+  if (R.lt('0.5') || R.gt(2)) warnings.push({ code: 'r_inusual', message: 'La conversión cambia más del 50 % lo que recibís: revisá que el % esté bien cargado.' });
   if (brechaAjustadaPct.gt(0) && st <= 0) warnings.push({ code: 'costos_eliminan_brecha', message: 'Hay brecha positiva, pero los costos se comen la ganancia.' });
   if (Cc.gt(10) || Cv.gt(10)) warnings.push({ code: 'comision_alta', message: 'Hay una comisión mayor al 10 %: revisá que esté bien cargada.' });
   if (T.gt(100)) warnings.push({ code: 'impuesto_alto', message: 'Los impuestos superan el 100 % de la compra: revisá el dato.' });

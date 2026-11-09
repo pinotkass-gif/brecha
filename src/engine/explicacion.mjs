@@ -85,10 +85,13 @@ export function explicarSimple(r, { mismoMercado = false, unidadOrigen = 'USD', 
     : `lo que cobrás al vender no supera lo que pagás al comprar${R.eq(1) ? '' : ' (con la conversión)'}`;
   const frases = [principal({ D, C, N, nivel, fmt: formatARS, fmtSigno: formatARSSigned, sujeto: 'la operación', diferencia: 'la diferencia entre puntas', porQueNegativa, mayor })];
 
-  // Efecto de la conversión entre instrumentos (sólo si la cargaste distinta de 1)
+  // Efecto de la conversión entre instrumentos (sólo si tiene costo o te dan de más). Se dice en %, como se carga.
   if (v.requiereConversion && !R.eq(1)) {
     const efecto = x.cantidadOrigen.times(R.minus(ONE)).times(V);
-    frases.push(`Por la relación de conversión (${formatNumberAR(R, { decimals: 6, minDecimals: 0 })}) recibís ${pctTxt(R.minus(ONE).times(HUNDRED))} ${R.lt(1) ? 'menos' : 'más'} unidades de ${unidadDestino} que los ${unidadOrigen} que comprás: eso ${R.lt(1) ? 'resta' : 'suma'} ${formatARS(efecto.abs())} a la diferencia entre puntas.`);
+    const p = pctTxt(R.minus(ONE).times(HUNDRED));
+    frases.push(R.lt(1)
+      ? `Al pasar de ${unidadOrigen} a ${unidadDestino} te cobran ${p}: recibís ${p} menos, y eso resta ${formatARS(efecto.abs())} a la diferencia entre puntas.`
+      : `Al pasar de ${unidadOrigen} a ${unidadDestino} te dan ${p} de más: eso suma ${formatARS(efecto)} a la diferencia entre puntas.`);
   }
   const inc = fraseIncompleto(r.calidad, N, formatARS);
   if (inc) frases.push(inc);
