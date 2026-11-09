@@ -1,0 +1,1270 @@
+// Interfaz de Brecha. Toda la matemática vive en src/engine; acá sólo se lee, se muestra y se guarda.
+import { calcularSimple, precioCompraFinal, COBROS_FIJOS } from '../engine/simple.mjs';
+import { parseNumberAR, formatARS, formatARSSigned, formatPct, formatQuote, formatUnits, formatNumberAR } from '../engine/format.mjs';
+import { toDec, plain } from '../engine/decimal.mjs';
+import { NO_APLICA, esNoAplica } from '../engine/costos.mjs';
+import { estadoCostoTexto, opcionesFiscal, bloqueCalidad, bloqueEconomico, bloqueExplicacion, tablaObjetivos, prefijoResultado, tono, tituloResultado } from './comun.mjs';
+import { explicarSimple } from '../engine/explicacion.mjs';
+import { MERCADOS, IDS_MERCADOS, mercadoPorId } from '../quotes/markets.mjs';
+import { proveedorPorDefecto } from '../quotes/providers/index.mjs';
+import { consultarConReintentos, puedeConsultar, POLITICA_CONSULTA } from '../quotes/cliente.mjs';
+import { clasificar, restaurarPolitica, POLITICA_FRESCURA_DEFECTO, HORAS_MAXIMAS } from '../quotes/frescura.mjs';
+import { textoProblema } from '../quotes/calidad.mjs';
+import { estadoInicial, aplicarRespuesta, editarManual, editarFuenteManual, volverAAPI, manuales, restaurar } from '../quotes/store.mjs';
+import { crearSimuladorRutas } from './rutas.mjs';
+import { crearOportunidades } from './oportunidades.mjs';
+import { crearHistorial } from './historial.mjs';
+import { crearAnalisis } from './analisis.mjs';
+import { crearBonos } from './bonos.mjs';
+import { crearPlataformas } from './plataformas.mjs';
+import { crearCapturas } from './capturas.mjs';
+import { resumenDeSimple, resumenDeRuta, trazaDeSimple } from '../historial/modelo.mjs';
+import { simularRuta } from '../engine/route.mjs';
+import { rutaDesdeSimple } from '../routes/desde-simple.mjs';
+import { IDS_ACTIVOS } from '../routes/activos.mjs';
+import { DECIMALES, NOMBRES, restaurarBorrador, normalizar } from '../routes/borrador.mjs';
+import { controlarCoherencia, restaurarContraste } from '../quotes/coherencia.mjs';
+import { restaurarCalendario, feriadosDelAnio, fechaAR, HORARIOS_DEFECTO } from '../quotes/calendario.mjs';
+
+const KEY_COT = 'brecha.cotizaciones.v1';
+const KEY_FORM = 'brecha.formulario.v3';
+const KEY_FORM_V1 = 'brecha.formulario.v1';
+const KEY_MODO = 'brecha.modo.v1';
+const KEY_POLITICA = 'brecha.politica.v1';
+let rutas = null;
+let oportunidades = null;
+let historial = null;
+const KEY_TEMA = 'brecha.tema.v1';
+const KEY_NIVEL = 'brecha.nivel.v1';
+/** Niveles de uso: cada uno muestra más herramientas. Nada se borra: lo oculto se ve subiendo de nivel. */
+const NIVELES_USO = ['rapido', 'avanzado', 'profesional'];
+const NIVEL_UI = {
+  rapido: { t: 'Rápido', d: 'Una operación sencilla: monto, mercados y precios. Los costos que no cargues cuentan como «No sé».' },
+  avanzado: { t: 'Avanzado', d: 'Suma comisiones, impuestos, conversiones, transferencias, la matriz de mercados y el detalle del cálculo.' },
+  profesional: { t: 'Profesional', d: 'Todo: rutas por pasos, liquidez, escenarios, sensibilidad, estrés, confirmaciones, bonos, perfiles y capturas.' },
+};
+const rangoNivel = (n) => NIVELES_USO.indexOf(n);
+let nivelUso = 'profesional';
+const INVALIDO = '__invalido__';
+const PROVEEDOR = proveedorPorDefecto;
+
+const $ = (sel) => document.querySelector(sel);
+/** "978,04 USDT": hasta `dec` decimales, sin ceros de más. */
+const unidades = (v, unidad, dec) => `${formatNumberAR(v, { decimals: dec, minDecimals: 0 })} ${unidad}`;
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const storage = {
+  get(k) {
+    try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; }
+  },
+  set(k, v) {
+    try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* sin almacenamiento: la app sigue andando */ }
+  },
+  /** Igual que set, pero avisa si no se pudo guardar (lleno o bloqueado). */
+  trySet(k, v) {
+    try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; }
+  },
+};
+
+/* ---------- Estado ---------- */
+let cot = restaurar(storage.get(KEY_COT));
+let politica = restaurarPolitica(storage.get(KEY_POLITICA));
+const KEY_CAL = 'brecha.calendario.v1';
+const KEY_CONTRASTE = 'brecha.contraste.v1';
+let calendario = restaurarCalendario(storage.get(KEY_CAL));
+let contraste = restaurarContraste(storage.get(KEY_CONTRASTE));
+let analisis = null;
+let capturas = null;
+const sim = { overrideBase: false, overrideVenta: false, consultando: false, nota: '' };
+/** Estado de frescura de un mercado según la política vigente y el calendario (feriados). */
+const estadoDe = (id) => clasificar(cot.mercados[id], id, { politica, cal: calendario });
+/** Control de coherencia entre mercados (alertas; nunca cambia precios). */
+const coherencia = () => {
+  // Los precios de tu otra fuente se escriben en formato argentino ("1.640,5"): se leen antes de comparar.
+  const leer = (t) => { const p = parseNumberAR(t, { kind: 'money' }); return p.ok && !p.empty ? p.value.toString() : null; };
+  const k = Object.fromEntries(Object.entries(contraste).map(([id, x]) => [id, { compra: leer(x.compra), venta: leer(x.venta), fuente: x.fuente }]));
+  return controlarCoherencia(cot.mercados, { contraste: k });
+};
+/**
+ * Cotizaciones que se usan solas: las marcadas "no usar" por el control de coherencia quedan afuera
+ * (se ven en la tarjeta con el motivo; si querés usarlas igual, cargalas a mano en la calculadora).
+ */
+function mercadosUsables() {
+  const c = coherencia();
+  const out = {};
+  for (const id of IDS_MERCADOS) out[id] = c.porMercado[id].veredicto === 'no_usar' ? { ...cot.mercados[id], valido: false } : cot.mercados[id];
+  return out;
+}
+const ESTADO_UI = {
+  actualizada: { t: 'Actualizada', i: '●', c: 'ok' },
+  antigua: { t: 'Antigua', i: '⏱', c: 'old' },
+  manual: { t: 'Manual', i: '✎', c: 'manual' },
+  no_disponible: { t: 'Sin datos', i: '—', c: 'none' },
+};
+const textoUmbral = (c) => `${formatNumberAR(c.umbralHoras, { decimals: 2, minDecimals: 0 })} h${c.horario === 'habil' ? ' hábiles' : ''}`;
+
+/** Moneda de un costo fijo según cómo se cobra: ARS se escribe con punto de miles; unidades, con punto decimal. */
+const kindCobro = (sel) => (COBROS_FIJOS[$(sel).value]?.moneda === 'ARS' ? 'money' : 'ratio');
+const CAMPOS = [
+  { key: 'monto', el: 'monto', kind: () => 'money' },
+  { key: 'cotizacionBase', el: 'cotizacion-base', kind: () => 'money' },
+  { key: 'aumentoPct', el: 'aumento', kind: () => 'percent' },
+  { key: 'precioVenta', el: 'precio-venta', kind: () => 'money' },
+  { key: 'relacionConversion', el: 'relacion', kind: () => 'ratio' },
+  { key: 'comisionCompraPct', el: 'com-compra', kind: () => 'percent', costo: true },
+  { key: 'comisionVentaPct', el: 'com-venta', kind: () => 'percent', costo: true },
+  { key: 'impuestoCompraPct', el: 'impuesto', kind: () => 'percent', costo: true },
+  { key: 'ivaComisionesPct', el: 'iva', kind: () => 'percent', costo: true },
+  { key: 'otrosCostos', el: 'otros', kind: () => kindCobro('#otros-cobro'), costo: true, cobro: '#otros-cobro' },
+  { key: 'costoTransferencia', el: 'transf', kind: () => kindCobro('#transf-cobro'), costo: true, cobro: '#transf-cobro' },
+  { key: 'slippageVentaPct', el: 'slippage', kind: () => 'percent', costo: true },
+];
+const SELECTS = ['modo-monto', 'mercado-compra', 'mercado-venta', 'otros-cobro', 'transf-cobro', 'impuesto-fiscal', 'iva-fiscal'];
+const CHECKS = ['relacion-hipotesis'];
+/** Campo del motor → id del input (para los botones "No aplica" / "Cargar" del resultado). */
+const INPUT_DE = Object.fromEntries(CAMPOS.map((c) => [c.key, c.el]));
+const mismoInstrumento = () => $('#mercado-compra').value === $('#mercado-venta').value;
+
+/* ---------- Fechas ---------- */
+const fmtFecha = new Intl.DateTimeFormat('es-AR', {
+  timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+});
+const fecha = (iso) => (iso ? fmtFecha.format(new Date(iso)).replace(',', '') : '—');
+const fmtHora = new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', hour12: false });
+const hora = (iso) => (iso ? fmtHora.format(new Date(iso)) : '—');
+function hace(ms) {
+  if (ms === null || ms === undefined) return '';
+  const min = Math.round(ms / 60000);
+  if (min < 1) return 'recién';
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 48) return `hace ${h} h`;
+  return `hace ${Math.floor(h / 24)} d`;
+}
+
+/* ---------- Cotizaciones ---------- */
+function guardarCot() {
+  storage.set(KEY_COT, cot);
+}
+
+/** Precio usable para calcular: existe y la cotización no está invalidada. */
+function precioMercado(id, punta) {
+  const m = mercadosUsables()[id];
+  if (!m || !m[punta] || m.valido === false) return null;
+  return m[punta];
+}
+
+/** "3 h 20 min" a partir de milisegundos. */
+function duracionCorta(ms) {
+  if (ms === null || ms === undefined) return '—';
+  const min = Math.round(ms / 60000);
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 48) return `${h} h${min % 60 ? ` ${min % 60} min` : ''}`;
+  return `${Math.floor(h / 24)} d ${h % 24} h`;
+}
+
+function renderCotizaciones() {
+  const coh = coherencia();
+  $('#cotizaciones').innerHTML = MERCADOS.map((def) => {
+    const m = cot.mercados[def.id];
+    const c = estadoDe(def.id);
+    const ui = ESTADO_UI[c.estado];
+    const ver = coh.porMercado[def.id];
+    const verBadge = ver.veredicto === 'confiable' ? '' : ` <span class="badge ${ver.veredicto === 'no_usar' ? 'neg' : 'old'}" data-testid="veredicto-${def.id}">${ver.veredicto === 'no_usar' ? '⛔ No usar' : '⚠ Revisar'}</span>`;
+    const alertasCoh = ver.alertas.filter((a) => a.nivel !== 'info' && a.codigo !== 'invalido' && a.codigo !== 'puntas_invertidas' && a.codigo !== 'spread' && a.codigo !== 'salto');
+    const mercadoTxt = c.edadMercadoMs !== null && HORARIOS_DEFECTO[def.id] && c.edadMs !== null
+      ? ` · en horario de mercado: ${duracionCorta(c.edadMercadoMs)}${c.mercadoAbierto ? '' : ' (mercado cerrado ahora)'}` : '';
+    const badge = `<span class="badge ${ui.c}" data-testid="estado-${def.id}"><span aria-hidden="true">${ui.i}</span> ${ui.t}</span>${verBadge}`;
+    let fuente = '';
+    let cuando = '';
+    if (m.origen === 'api') {
+      fuente = `${m.fuente}${m.fuenteOriginal ? ` · origen: ${m.fuenteOriginal}` : ''}`;
+      cuando = c.motivo === 'sin_fecha'
+        ? `⚠ La fuente no informó de cuándo es el dato · recibido ${hora(m.fetchedAt)}`
+        : c.motivo === 'fecha_futura'
+          ? `⚠ La fuente informa una fecha del futuro (${fecha(m.fechaFuente)}): no se sabe de cuándo es el dato · recibido ${hora(m.fetchedAt)}`
+          : `${c.antigua ? `⚠ Antigua (más de ${textoUmbral(c)}) · ` : ''}Dato de la fuente: ${fecha(m.fechaFuente)} · ${hace(c.edadMs)}${mercadoTxt} · recibido ${hora(m.fetchedAt)}`;
+    } else if (m.origen === 'manual') {
+      fuente = `Manual${m.fuenteManual ? ` · ${m.fuenteManual}` : ''}`;
+      cuando = `${c.antigua ? `⚠ Cargada hace más de ${textoUmbral(c)}: revisala · ` : ''}Cargada ${fecha(m.editadoAt)} · ${hace(c.edadMs)}`;
+    } else {
+      cuando = 'Todavía no hay cotización';
+    }
+    const problemas = (m.problemas || []).filter((p) => p !== 'incompleto' || m.origen === 'manual');
+    const apiAlt = m.origen === 'manual' && m.api
+      ? `<p class="api-alt">${esc(m.api.fuente)}: compra ${m.api.compra ? formatQuote(m.api.compra) : '—'} · venta ${m.api.venta ? formatQuote(m.api.venta) : '—'} <button type="button" class="btn ghost small" data-volver="${def.id}">Volver a ${esc(m.api.fuente)}</button></p>` : '';
+    const fuenteManual = m.origen === 'manual'
+      ? `<label class="q-src">De dónde sale <input type="text" data-fuente="${def.id}" value="${esc(m.fuenteManual)}" placeholder="Ej.: mi broker" maxlength="60" aria-label="${def.nombre}: de dónde sale la cotización manual"></label>` : '';
+    const inp = (punta, label) => `
+      <label class="q-field">
+        <span>${label}</span>
+        <input type="text" inputmode="decimal" data-id="${def.id}" data-punta="${punta}" value="${m[punta] ? esc(formatQuote(m[punta])) : ''}" aria-label="${def.nombre}: ${label}">
+      </label>`;
+    return `
+      <article class="card estado-${c.estado}${m.valido ? '' : ' invalid'}" data-mercado="${def.id}">
+        <header><h3>${def.nombre}</h3>${badge}</header>
+        <p class="inst">${esc(def.instrumento)}</p>
+        <div class="q-row">${inp('compra', 'Compra (te pagan)')}${inp('venta', 'Venta (pagás)')}</div>
+        ${fuente ? `<p class="fuente">${esc(fuente)}</p>` : ''}
+        <p class="when${c.antigua ? ' old' : ''}">${esc(cuando)}</p>
+        ${fuenteManual}
+        ${problemas.length ? `<p class="problem">⚠ ${esc(problemas.map(textoProblema).join(' · '))}</p>` : ''}
+        ${alertasCoh.length ? `<p class="problem" data-testid="coherencia-${def.id}">${ver.veredicto === 'no_usar' ? '⛔' : '⚠'} ${esc(alertasCoh.map((a) => a.texto).join(' '))}${ver.veredicto === 'no_usar' ? ' No se usa sola para calcular: si querés usarla igual, cargala a mano en la calculadora.' : ''}</p>` : ''}
+        ${apiAlt}
+        <p class="card-error" data-error="${def.id}" hidden></p>
+      </article>`;
+  }).join('');
+}
+
+function renderEstadoConsulta() {
+  const el = $('#estado-consulta');
+  const u = cot.ultimaConsulta;
+  el.classList.remove('error');
+  const nota = sim.nota ? ` ${sim.nota}` : '';
+  if (sim.consultando) { el.textContent = `Consultando ${PROVEEDOR.nombre}…`; return; }
+  if (!u) { el.textContent = `Sin consultas todavía.${nota}`; return; }
+  const intentos = u.intentos > 1 ? ` (${u.intentos} intentos)` : '';
+  if (u.ok) {
+    const falt = u.faltantes?.length ? ` · faltaron: ${u.faltantes.map((id) => mercadoPorId(id).nombre).join(', ')}` : '';
+    el.textContent = `Consultado ${fecha(u.at)} · ${PROVEEDOR.nombre}${intentos}${falt} · cotizaciones de referencia.${nota}`;
+  } else {
+    el.classList.add('error');
+    const hay = IDS_MERCADOS.some((id) => cot.mercados[id].compra || cot.mercados[id].venta);
+    const espera = u.reintentarDespues && Date.parse(u.reintentarDespues) > Date.now() ? ` Podés reintentar desde las ${hora(u.reintentarDespues)}.` : '';
+    const datos = hay
+      ? ` Se muestran los últimos datos guardados${u.ultimoExitoAt ? ` (consultados ${fecha(u.ultimoExitoAt)})` : ''}, cada uno con su estado.`
+      : ' Cargá las cotizaciones a mano o reintentá.';
+    el.textContent = `No se pudo actualizar (${fecha(u.at)}${intentos}): ${u.error.mensaje}${espera}${datos}${nota}`;
+  }
+}
+
+function renderAvisoManuales() {
+  const el = $('#aviso-manuales');
+  const cons = (cot.ultimaConsulta?.conservados ?? []).filter((id) => cot.mercados[id].origen === 'manual');
+  if (!cons.length) { el.hidden = true; el.innerHTML = ''; return; }
+  const nombres = cons.map((id) => mercadoPorId(id).nombre).join(', ');
+  el.hidden = false;
+  el.innerHTML = `<p>Conservé tus cotizaciones manuales de <strong>${esc(nombres)}</strong>. ${esc(PROVEEDOR.nombre)} trajo valores nuevos (los ves en cada tarjeta).</p>
+    <div class="banner-actions"><button type="button" class="btn small" id="reemplazar-manuales">Reemplazar por ${esc(PROVEEDOR.nombre)}</button>
+    <button type="button" class="btn ghost small" id="cerrar-aviso">Mantener las mías</button></div>`;
+}
+
+function notaBloqueo(gate) {
+  const s = Math.ceil(gate.esperarMs / 1000);
+  if (gate.motivo === 'copia_local') {
+    return `Usando la copia local: se renueva sola pasados ${POLITICA_CONSULTA.copiaLocalMinutos} min o con el botón.`;
+  }
+  if (gate.motivo === 'espera_manual') {
+    return `Ya se consultó hace instantes: podés volver a consultar en ${s} s (la fuente no cambia segundo a segundo).`;
+  }
+  return `${PROVEEDOR.nombre} pidió esperar: podés reintentar en ${s} s.`;
+}
+
+/** @param {'auto'|'manual'} motivo  auto = al abrir (usa la copia local si es reciente) */
+async function actualizarCotizaciones(motivo = 'manual') {
+  if (sim.consultando) return;
+  const gate = puedeConsultar(cot.ultimaConsulta, { motivo });
+  if (!gate.permitido) {
+    sim.nota = notaBloqueo(gate);
+    renderEstadoConsulta();
+    return;
+  }
+  sim.nota = '';
+  sim.consultando = true;
+  $('#btn-actualizar').disabled = true;
+  renderEstadoConsulta();
+  try {
+    const resp = await consultarConReintentos(PROVEEDOR);
+    cot = aplicarRespuesta(cot, resp);
+    guardarCot();
+    if (resp.ok) capturas?.alActualizar();
+  } finally {
+    // Pase lo que pase, el botón vuelve a quedar disponible.
+    sim.consultando = false;
+    $('#btn-actualizar').disabled = false;
+    renderTodo();
+  }
+}
+
+/* ---------- Política de vencimiento ---------- */
+function renderPolitica() {
+  const box = $('#politica-campos');
+  box.innerHTML = MERCADOS.map((def) => {
+    const r = politica[def.id];
+    return `<div class="field pol-field">
+      <label for="pol-${def.id}">${def.nombre}: antigua después de</label>
+      <div class="with-action"><input id="pol-${def.id}" data-politica="${def.id}" type="text" inputmode="decimal" value="${esc(formatNumberAR(r.horas, { decimals: 2, minDecimals: 0 }))}" aria-describedby="pol-${def.id}-u">
+      <span class="unit" id="pol-${def.id}-u">h ${r.horario === 'habil' ? 'hábiles' : 'corridas'}</span></div>
+    </div>`;
+  }).join('');
+  renderCalendario();
+  $('#politica-consulta').textContent = `Al abrir la app se usa la copia local si tiene menos de ${POLITICA_CONSULTA.copiaLocalMinutos} min. `
+    + `Con el botón, como máximo una consulta por minuto. Si falla la red o el servidor, se reintenta ${POLITICA_CONSULTA.reintentos} veces (a los 1 y 3 s). `
+    + `Si ${PROVEEDOR.nombre} pide esperar, se respeta.`;
+}
+
+/** Feriados: los automáticos del año y los que cargás vos (trasladables, puentes). */
+function renderCalendario() {
+  const anio = Number(fechaAR(Date.now()).slice(0, 4));
+  const auto = [...feriadosDelAnio(anio)].sort();
+  $('#calendario-campos').innerHTML = `
+    <p class="sub">Feriados (no cuentan como horas hábiles)</p>
+    <p class="hint">Automáticos ${anio} (inamovibles por ley, Carnaval y Viernes Santo): ${esc(auto.map((f) => f.slice(5).split('-').reverse().join('/')).join(', '))}.
+      Los trasladables y los días no laborables con fines turísticos cambian por decreto: cargalos vos (fuente: argentina.gob.ar/interior/feriados).</p>
+    <div class="row two">
+      <div class="field"><label for="cal-extra">Feriados que agregás <span class="unit">uno por línea, AAAA-MM-DD</span></label>
+        <textarea id="cal-extra" rows="3" data-cal="extra" placeholder="2026-08-17">${esc(calendario.extra.join('\n'))}</textarea></div>
+      <div class="field"><label for="cal-quitar">Feriados automáticos que sacás <span class="unit">uno por línea</span></label>
+        <textarea id="cal-quitar" rows="3" data-cal="quitar">${esc(calendario.quitar.join('\n'))}</textarea></div>
+    </div>`;
+}
+
+/** Panel de calidad: veredicto, alertas, antigüedades y la fuente de contraste que cargás vos. */
+function renderCalidad() {
+  const coh = coherencia();
+  const VER = { confiable: '✔ Confiable', revisar: '⚠ Revisar', no_usar: '⛔ No usar' };
+  const filas = MERCADOS.map((def) => {
+    const v = coh.porMercado[def.id];
+    const c = estadoDe(def.id);
+    const m = cot.mercados[def.id];
+    const k = contraste[def.id] ?? { compra: '', venta: '', fuente: '' };
+    const inp = (campo, ph) => `<input type="text" data-contraste="${def.id}.${campo}" value="${esc(k[campo] ?? '')}" placeholder="${ph}" aria-label="${def.nombre}: ${campo === 'fuente' ? 'otra fuente' : `${campo} en otra fuente`}">`;
+    return `<tr data-testid="calidad-${def.id}"><th scope="row">${def.nombre}</th><td class="ver-${v.veredicto}">${VER[v.veredicto]}</td>
+      <td>${v.alertas.length ? `<ul>${v.alertas.map((a) => `<li>${esc(a.texto)}</li>`).join('')}</ul>` : 'Sin alertas'}</td>
+      <td>${m.fechaFuente ? esc(fecha(m.fechaFuente)) : '—'}<br><span class="unit">recibido ${m.fetchedAt ? esc(hora(m.fetchedAt)) : '—'}</span></td>
+      <td>${duracionCorta(c.edadMs)}<br><span class="unit">${HORARIOS_DEFECTO[def.id] ? `en horario de mercado: ${duracionCorta(c.edadMercadoMs)}` : 'opera todo el día'}</span></td>
+      <td class="contraste">${inp('compra', 'Compra')}${inp('venta', 'Venta')}${inp('fuente', 'De dónde')}</td></tr>`;
+  }).join('');
+  $('#calidad-campos').innerHTML = `${coh.generales.map((g) => `<p class="hint">${esc(g.texto)}</p>`).join('')}
+    <div class="table-wrap"><table class="breakdown calidad-tabla"><thead><tr><th scope="col">Mercado</th><th scope="col">Veredicto</th><th scope="col">Alertas</th><th scope="col">Publicado</th><th scope="col">Antigüedad</th><th scope="col">Tu otra fuente</th></tr></thead><tbody>${filas}</tbody></table></div>
+    <p class="hint">Horarios de mercado usados para la antigüedad: oficial 10 a 15, blue 10 a 18, MEP y CCL 11 a 17 (hora de Buenos Aires, valores a verificar); cripto opera todo el día.</p>`;
+}
+
+function aplicarPolitica(id, raw) {
+  const p = parseNumberAR(raw, { kind: 'ratio' });
+  const err = $(`#pol-${id}`);
+  if (!p.ok || p.empty || !p.value.gt(0) || p.value.gt(HORAS_MAXIMAS)) {
+    err.setAttribute('aria-invalid', 'true');
+    return;
+  }
+  err.removeAttribute('aria-invalid');
+  politica = restaurarPolitica({ ...politica, [id]: { horas: Number(p.value.toString()) } });
+  storage.set(KEY_POLITICA, politica);
+  renderTodo();
+}
+
+/** Las edades cambian con el tiempo aunque no se consulte: se recalculan cada minuto, sin red. */
+function refrescarEdades() {
+  const act = document.activeElement;
+  if (!act || !$('#cotizaciones').contains(act)) renderCotizaciones();
+  renderEstadoConsulta();
+  sincronizarPrecios();
+  recalcular();
+  rutas?.refrescar();
+}
+
+/* ---------- Formulario ---------- */
+function llenarSelects() {
+  const opts = MERCADOS.map((m) => `<option value="${m.id}">${m.nombre}</option>`).join('');
+  $('#mercado-compra').innerHTML = opts;
+  $('#mercado-venta').innerHTML = opts;
+  $('#mercado-compra').value = 'oficial';
+  $('#mercado-venta').value = 'blue';
+  for (const id of ['otros-cobro', 'transf-cobro']) $(`#${id}`).innerHTML = Object.entries(COBROS_FIJOS).map(([k, c]) => `<option value="${k}">${c.texto}</option>`).join('');
+  $('#otros-cobro').value = 'suma_capital';
+  $('#transf-cobro').value = 'suma_capital';
+  $('#impuesto-fiscal').innerHTML = opcionesFiscal('pendiente');
+  $('#iva-fiscal').innerHTML = opcionesFiscal('pendiente');
+}
+
+/** Textos de la relación de conversión y de los cobros según los instrumentos elegidos. */
+function actualizarEtiquetas() {
+  const a = mercadoPorId($('#mercado-compra').value);
+  const b = mercadoPorId($('#mercado-venta').value);
+  const mismo = mismoInstrumento();
+  const rel = $('#relacion');
+  rel.disabled = mismo;
+  $('#relacion-probar').hidden = mismo;
+  $('#relacion-hipotesis').disabled = mismo;
+  $('#campo-relacion').classList.toggle('requerido', !mismo);
+  $('#relacion-unidad').textContent = mismo ? 'no hace falta: comprás y vendés el mismo instrumento' : `${b.instrumento} por cada 1 ${a.instrumento} (obligatoria)`;
+  $('#relacion-hint').textContent = mismo
+    ? ''
+    : `Comprás ${a.instrumento} y vendés ${b.instrumento}: no son lo mismo. Cargá cuánto recibís del segundo por cada unidad del primero (por ejemplo 0,99 si se pierde 1 %). Si no lo sabés, no hay resultado; podés probar un supuesto marcándolo como hipótesis.`;
+  for (const id of ['otros-cobro', 'transf-cobro']) {
+    for (const o of $(`#${id}`).options) {
+      const c = COBROS_FIJOS[o.value];
+      o.textContent = c.moneda === 'origen' ? `${c.texto} (${a.unidad}, ${c.momento})` : c.moneda === 'destino' ? `${c.texto} (${b.unidad}, ${c.momento})` : `${c.texto}, ${c.momento}`;
+    }
+  }
+}
+
+/** Completa cotización base y precio de venta desde el mercado, salvo que los hayas editado en la calculadora. */
+function sincronizarPrecios() {
+  const c = $('#mercado-compra').value;
+  const v = $('#mercado-venta').value;
+  if (!sim.overrideBase) {
+    const p = precioMercado(c, 'venta');
+    $('#cotizacion-base').value = p ? formatQuote(p) : '';
+  }
+  if (!sim.overrideVenta) {
+    const p = precioMercado(v, 'compra');
+    $('#precio-venta').value = p ? formatQuote(p) : '';
+  }
+  $('#reset-base').hidden = !sim.overrideBase;
+  $('#reset-venta').hidden = !sim.overrideVenta;
+  $('#cotizacion-base-src').textContent = textoFuente(c, 'venta', sim.overrideBase);
+  $('#precio-venta-src').textContent = textoFuente(v, 'compra', sim.overrideVenta);
+}
+
+function textoFuente(id, punta, override) {
+  const def = mercadoPorId(id);
+  const hoy = precioMercado(id, punta) ? formatQuote(precioMercado(id, punta)) : 'sin dato';
+  if (override && sim.guardada?.[punta === 'venta' ? 'base' : 'venta']) return `Precio guardado en «${sim.guardada.nombre}» (${fecha(sim.guardada.fecha)}). Hoy ${def.nombre} ${punta}: ${hoy}`;
+  if (override) return `Cargado a mano en la calculadora (${def.nombre} ${punta}: ${hoy})`;
+  const m = cot.mercados[id];
+  const c = estadoDe(id);
+  if (!precioMercado(id, punta)) return `${def.nombre} · ${punta} · sin cotización válida: cargala a mano`;
+  if (m.origen === 'manual') return `${def.nombre} · ${punta} · cotización manual${m.fuenteManual ? ` (${m.fuenteManual})` : ''}, cargada ${fecha(m.editadoAt)}${c.antigua ? ' · ⚠ revisala' : ''}`;
+  return `${def.nombre} · ${punta} · ${m.fuente}, dato de ${fecha(m.fechaFuente)} (${hace(c.edadMs)}) · ${ESTADO_UI[c.estado].t.toLowerCase()}`;
+}
+
+/** Cómo se muestra un valor de un campo (para el texto de abajo de cada campo). */
+function formatoCampo(campo, kind) {
+  return (v) => {
+    if (campo.key === 'monto') return $('#modo-monto').value === 'ars' ? formatARS(v) : formatUnits(v, mercadoPorId($('#mercado-compra').value).unidad);
+    if (campo.cobro && kind !== 'money') {
+      const moneda = COBROS_FIJOS[$(campo.cobro).value]?.moneda;
+      const unidad = moneda === 'origen' ? mercadoPorId($('#mercado-compra').value).unidad : mercadoPorId($('#mercado-venta').value).unidad;
+      return unidades(v, unidad, 6);
+    }
+    if (kind === 'money') return formatARS(v);
+    if (kind === 'percent') return `${formatNumberAR(v, { decimals: 6, minDecimals: 0 })} %`;
+    return formatNumberAR(v, { decimals: 8, minDecimals: 0 });
+  };
+}
+
+function echo(campo, raw, p, kind) {
+  const el = document.getElementById(`${campo.el}-echo`);
+  const input = document.getElementById(campo.el);
+  if (!el) return;
+  el.classList.remove('bad', 'nose', 'na', 'cero');
+  input.removeAttribute('aria-invalid');
+  if (campo.costo) {
+    const e = estadoCostoTexto(raw, p, formatoCampo(campo, kind));
+    el.textContent = e.texto;
+    if (e.clase) el.classList.add(e.clase);
+    if (e.clase === 'bad') input.setAttribute('aria-invalid', 'true');
+    return;
+  }
+  if (!p.ok) {
+    el.textContent = p.error;
+    el.classList.add('bad');
+    input.setAttribute('aria-invalid', 'true');
+    return;
+  }
+  if (p.empty) {
+    el.textContent = campo.key === 'relacionConversion' && !mismoInstrumento() ? 'No sé: sin este dato no hay resultado (no se supone 1 a 1)' : '';
+    if (el.textContent) el.classList.add('nose');
+    return;
+  }
+  el.textContent = `= ${formatoCampo(campo, kind)(p.value)}`;
+}
+
+function leerFormulario() {
+  actualizarEtiquetas();
+  const entrada = { modoMonto: $('#modo-monto').value };
+  for (const campo of CAMPOS) {
+    const kind = campo.kind();
+    const raw = document.getElementById(campo.el).value;
+    const p = parseNumberAR(raw, { kind });
+    echo(campo, raw, p, kind);
+    entrada[campo.key] = campo.costo && esNoAplica(raw) ? NO_APLICA : !p.ok ? INVALIDO : p.empty ? null : p.value;
+  }
+  entrada.otrosCostos = { monto: entrada.otrosCostos, cobro: $('#otros-cobro').value };
+  entrada.costoTransferencia = { monto: entrada.costoTransferencia, cobro: $('#transf-cobro').value };
+  entrada.impuestoFiscal = $('#impuesto-fiscal').value;
+  entrada.ivaFiscal = $('#iva-fiscal').value;
+  entrada.requiereConversion = !mismoInstrumento();
+  if (mismoInstrumento()) entrada.relacionConversion = null; // mismo instrumento: no hay conversión
+  entrada.relacionHipotesis = !mismoInstrumento() && $('#relacion-hipotesis').checked;
+  return entrada;
+}
+
+function datosFormulario() {
+  const data = { version: 3, overrideBase: sim.overrideBase, overrideVenta: sim.overrideVenta, campos: {}, selects: {}, checks: {}, masCostos: $('#mas-costos').open };
+  for (const c of CAMPOS) data.campos[c.el] = document.getElementById(c.el).value;
+  for (const s of SELECTS) data.selects[s] = document.getElementById(s).value;
+  for (const k of CHECKS) data.checks[k] = document.getElementById(k).checked;
+  return data;
+}
+
+function guardarFormulario() {
+  storage.set(KEY_FORM, datosFormulario());
+}
+
+/**
+ * Formulario guardado → campos. El formato anterior (v1) se convierte: el "1" que venía por defecto en la
+ * relación de conversión NO se conserva (sería suponer 1 a 1), y "transferencia en ARS/origen/destino" pasa a su forma de cobro.
+ * @returns {boolean} true si hubo que convertir un formulario anterior
+ */
+function aplicarFormulario(d) {
+  if (!d || typeof d !== 'object') return false;
+  const v1 = d.version !== 3;
+  const selects = { ...(d.selects ?? {}) };
+  if (v1 && typeof selects['transf-unidad'] === 'string') selects['transf-cobro'] = { ARS: 'suma_capital', origen: 'descuenta_origen', destino: 'descuenta_destino' }[selects['transf-unidad']];
+  for (const s of SELECTS) {
+    const el = document.getElementById(s);
+    const v = selects[s];
+    if (typeof v === 'string' && [...el.options].some((o) => o.value === v)) el.value = v;
+  }
+  for (const c of CAMPOS) {
+    const v = d.campos?.[c.el];
+    if (typeof v === 'string') document.getElementById(c.el).value = v;
+  }
+  for (const k of CHECKS) document.getElementById(k).checked = d.checks?.[k] === true;
+  let convertido = false;
+  if (v1 && document.getElementById('relacion').value.trim() === '1') {
+    document.getElementById('relacion').value = '';
+    convertido = true;
+  }
+  sim.overrideBase = d.overrideBase === true;
+  sim.overrideVenta = d.overrideVenta === true;
+  if (d.masCostos) $('#mas-costos').open = true;
+  return convertido || v1;
+}
+
+function restaurarFormulario() {
+  const nuevo = storage.get(KEY_FORM);
+  if (nuevo) { aplicarFormulario(nuevo); return; }
+  const viejo = storage.get(KEY_FORM_V1);
+  if (viejo && aplicarFormulario(viejo)) {
+    sim.nota = '';
+    sim.avisoMigracion = 'Brecha 3: los costos vacíos ahora cuentan como "No sé" (antes valían 0) y la relación de conversión ya no se supone 1 a 1. Revisá tu simulación.';
+  }
+}
+
+/* ---------- Resultado ---------- */
+function advertenciasDeRuta(compra, venta, entrada) {
+  const out = [];
+  const a = mercadoPorId(compra);
+  const b = mercadoPorId(venta);
+  if (compra === venta) {
+    out.push('Mismo mercado: comprás al precio de venta y vendés al de compra, así que el spread juega en contra.');
+  } else {
+    out.push(`Ruta no verificada: pasar de ${a.instrumento} a ${b.instrumento} puede requerir pasos, plazos, costos y condiciones normativas que esta calculadora no verifica.`);
+  }
+  const r = entrada.relacionConversion;
+  if (compra !== venta && entrada.relacionHipotesis && r && r !== INVALIDO && toDec(r).eq(1)) {
+    out.push(`Probás con 1 ${a.instrumento} = 1 ${b.instrumento}: es una hipótesis, no un dato. Cargá la conversión real y sus costos.`);
+  }
+  for (const [id, punta, ov] of [[compra, 'venta', sim.overrideBase], [venta, 'compra', sim.overrideVenta]]) {
+    if (ov) continue;
+    const m = cot.mercados[id];
+    const c = estadoDe(id);
+    const n = mercadoPorId(id).nombre;
+    if (c.estado === 'antigua') {
+      out.push(c.motivo === 'sin_fecha' || c.motivo === 'fecha_futura'
+        ? `No se sabe de cuándo es la cotización de ${n}${c.motivo === 'fecha_futura' ? ' (la fuente informa una fecha del futuro)' : ''}.`
+        : `La cotización de ${n} (${punta}) es antigua: más de ${textoUmbral(c)} según la fuente.`);
+    } else if (c.estado === 'manual') {
+      out.push(`La cotización de ${n} (${punta}) es manual${m.fuenteManual ? ` (${m.fuenteManual})` : ''}${c.antigua ? ` y se cargó hace más de ${textoUmbral(c)}: revisala` : ''}.`);
+    }
+    for (const p of ['salto_brusco', 'spread_inusual']) {
+      if (m.problemas?.includes(p)) out.push(`${n}: ${textoProblema(p)}.`);
+    }
+  }
+  return out;
+}
+
+const DISCLAIMER_SIMPLE = 'Simulación con cotizaciones de referencia: no garantiza que la operación se pueda ejecutar a estos precios.';
+
+function renderResultado(r, entrada) {
+  const box = $('#resultado');
+  const compra = $('#mercado-compra').value;
+  const venta = $('#mercado-venta').value;
+  box.dataset.nivel = r.ok ? r.calidad.nivel : r.datosInsuficientes ? 'insuficiente' : 'error';
+  const nota = sim.notaGuardada ? `<div class="banner" role="status" data-testid="nota-guardada"><p>${esc(sim.notaGuardada)}</p></div>` : '';
+  if (!r.ok) {
+    if (r.datosInsuficientes) {
+      const ayuda = r.errors.some((e) => e.field === 'relacionConversion')
+        ? '<div class="banner-actions"><button type="button" class="btn small" data-accion-simple="probar-1a1">Probar 1 a 1 como hipótesis</button> <button type="button" class="btn ghost small" data-cargar-campo="relacionConversion">Cargar la conversión</button></div>' : '';
+      box.innerHTML = `<h3 id="h-res" class="sr-only">Resultado</h3>${nota}${bloqueCalidad(r.calidad, { ayudaInsuficiente: ayuda })}<p class="disclaimer">${DISCLAIMER_SIMPLE}</p>`;
+      return;
+    }
+    box.innerHTML = `<h3 id="h-res" class="sr-only">Resultado</h3>${nota}
+      <div class="res-errors" role="alert"><p class="res-title">Falta corregir para calcular</p>
+      <ul>${r.errors.map((e) => `<li>${esc(e.message)}</li>`).join('')}</ul></div>`;
+    return;
+  }
+  const x = r.result;
+  const nivel = r.calidad.nivel;
+  const uo = mercadoPorId(compra).unidad;
+  const ud = mercadoPorId(venta).unidad;
+  const tit = tituloResultado(x.estado, nivel);
+  const c = tono(x.resultadoNeto, nivel);
+  const avisos = [...r.warnings.filter((w) => w.code !== 'costos_desconocidos').map((w) => w.message), ...advertenciasDeRuta(compra, venta, entrada)];
+  const fila = (label, value, cls = '') => `<tr class="${cls}"><th scope="row">${label}</th><td>${value}</td></tr>`;
+  const botonNoAplica = (d) => (INPUT_DE[d.campo]
+    ? ` <button type="button" class="btn ghost small" data-cargar-campo="${d.campo}">Cargar</button> <button type="button" class="btn ghost small" data-na-campo="${d.campo}" aria-label="${esc(d.etiqueta)}: no aplica">No aplica</button>` : '');
+  const fijos = Object.entries(x.fijos).filter(([, v]) => !v.eq(0)).map(([k, v]) => {
+    const cb = COBROS_FIJOS[k];
+    const moneda = cb.moneda === 'origen' ? uo : cb.moneda === 'destino' ? ud : 'ARS';
+    return fila(`Costos fijos: ${cb.texto.toLowerCase()} (${cb.momento})`, moneda === 'ARS' ? formatARS(v) : unidades(v, moneda, 6));
+  }).join('');
+
+  const todosNoAplican = r.calidad.desconocidos?.length > 1
+    ? '<div class="banner-actions"><button type="button" class="btn ghost small" data-accion-simple="todos-no-aplican">Ninguno de estos existe: marcarlos «no aplica»</button></div>' : '';
+  box.innerHTML = `<h3 id="h-res" class="sr-only">Resultado</h3>
+    ${nota}
+    ${bloqueCalidad(r.calidad, { botonNoAplica, pie: todosNoAplican })}
+    <div class="headline ${c}" data-testid="headline">
+      <p class="res-title"><span aria-hidden="true">${tit.i}</span> ${tit.t}</p>
+      <p class="big" data-testid="resultado-neto">${prefijoResultado(nivel)}${formatARSSigned(x.resultadoNeto)}</p>
+      <p class="roi">Resultado de caja · ROI neto ${nivel === 'incompleto' ? 'como máximo ' : ''}<strong class="${c}" data-testid="roi">${formatPct(x.roiPct)}</strong></p>
+    </div>
+    ${bloqueExplicacion(explicarSimple(r, { mismoMercado: compra === venta, unidadOrigen: uo, unidadDestino: ud }))}
+    ${bloqueEconomico(x.resultadoEconomico, x.resultadoNeto, { conceptos: x.fiscal.conceptos })}
+    <dl class="kpis">
+      <div><dt>Capital desembolsado</dt><dd data-testid="capital-inicial">${formatARS(x.capitalInicial)}</dd></div>
+      <div><dt>Capital final</dt><dd data-testid="capital-final">${formatARS(x.capitalFinal)}</dd></div>
+      <div><dt>Ingreso bruto <span class="unit">a cotización</span></dt><dd data-testid="ingreso-bruto">${formatARS(x.ingresoBruto)}</dd></div>
+      <div><dt>Costos totales${nivel === 'incompleto' ? ' <span class="unit">conocidos</span>' : ''}</dt><dd data-testid="costos-totales">${formatARS(x.costosTotales)}</dd></div>
+      <div><dt>Equilibrio <span class="unit">precio de venta</span></dt><dd data-testid="equilibrio">${formatARS(x.equilibrioVenta)}</dd></div>
+      <div><dt>Margen de seguridad</dt><dd data-testid="margen">${formatPct(x.objetivosPrecio[0].margenSeguridadPct)}</dd></div>
+    </dl>
+    <div class="gaps">
+      <p>Brecha nominal <strong data-testid="brecha-nominal">${formatPct(x.brechaNominalPct)}</strong></p>
+      <p>Brecha ajustada por conversión <strong data-testid="brecha-ajustada">${formatPct(x.brechaAjustadaPct)}</strong></p>
+      <p class="hint">La brecha compara precios; no es ganancia. El resultado neto incluye los costos cargados.</p>
+    </div>
+    ${tablaObjetivos(x.objetivosPrecio, `ARS por 1 ${ud}`, nivel)}
+    ${avisos.length ? `<ul class="warnings" data-testid="avisos">${avisos.map((a) => `<li>⚠ ${esc(a)}</li>`).join('')}</ul>` : ''}
+    <div class="res-actions">${historial?.botones('simple') ?? ''}<button type="button" class="btn ghost small" id="abrir-como-ruta" data-desde="profesional">Abrir como ruta por pasos →</button></div>
+    ${analisis?.html('simple', datosAnalisisSimple) ?? ''}
+    <details class="detail" data-desde="avanzado">
+      <summary>Detalle del cálculo</summary>
+      <table class="breakdown"><tbody>
+        ${fila('Cantidad comprada', unidades(x.cantidadOrigen, uo, 4))}
+        ${fila('Precio de compra final', formatARS(x.precioCompraFinal, { decimals: 4 }))}
+        ${fila('Compra', formatARS(x.compra))}
+        ${fila('Comisión de compra (sobre la compra)', formatARS(x.comisionCompra))}
+        ${fila('IVA u otro % sobre la comisión de compra', formatARS(x.ivaCompra))}
+        ${fila('Impuestos sobre la compra', formatARS(x.impuestoCompra))}
+        ${fijos}
+        ${fila('Costos en unidades (valorizados al precio de venta)', formatARS(x.costoTransferenciaUnidadesARS))}
+        ${fila('Unidades recibidas', unidades(x.unidadesRecibidas, ud, 4))}
+        ${fila('Precio de venta efectivo', formatARS(x.precioVentaEfectivo, { decimals: 4 }))}
+        ${fila('Ingreso efectivo', formatARS(x.ingresoEfectivo))}
+        ${fila('Comisión de venta (sobre lo cobrado)', formatARS(x.comisionVenta))}
+        ${fila('IVA u otro % sobre la comisión de venta', formatARS(x.ivaVenta))}
+        ${fila('Slippage', formatARS(x.costoSlippage))}
+      </tbody></table>
+    </details>
+    <p class="disclaimer">${DISCLAIMER_SIMPLE}</p>`;
+}
+
+function actualizarPrecioFinal(entrada) {
+  const out = $('#precio-final');
+  const B = entrada.cotizacionBase;
+  const A = entrada.aumentoPct;
+  if (!B || B === INVALIDO || A === INVALIDO || toDec(B).lte(0)) { out.textContent = '—'; return; }
+  const a = A ?? 0;
+  if (toDec(a).lt(0) || toDec(a).gt(100)) { out.textContent = '—'; return; }
+  out.textContent = formatARS(precioCompraFinal(B, a), { decimals: 2 });
+}
+
+/** La operación simple como ruta equivalente, para el panel de análisis. */
+function datosAnalisisSimple() {
+  const conv = rutaDesdeSimple(leerFormulario(), $('#mercado-compra').value, $('#mercado-venta').value);
+  if (!conv.ok) return null;
+  return { entrada: conv.entrada, motor: { activosValidos: IDS_ACTIVOS, decimales: DECIMALES, nombres: NOMBRES }, unidadPrecio: `ARS por 1 ${mercadoPorId($('#mercado-venta').value).unidad}`, conTiempo: false };
+}
+
+/**
+ * Una simulación simple guardada → entrada del motor (sin tocar la pantalla). Para recalcularla con otros precios.
+ * Del formato anterior, el "1" por defecto de la conversión no se conserva (no se supone 1 a 1).
+ */
+function entradaDesdeGuardada(s) {
+  const campos = s.campos ?? {};
+  const sel = s.selects ?? {};
+  const v1 = s.version !== 3;
+  const cobroT = sel['transf-cobro'] ?? ({ ARS: 'suma_capital', origen: 'descuenta_origen', destino: 'descuenta_destino' }[sel['transf-unidad']] ?? 'suma_capital');
+  const cobroO = sel['otros-cobro'] ?? 'suma_capital';
+  const kindDe = (c) => (c.key === 'otrosCostos' ? (COBROS_FIJOS[cobroO]?.moneda === 'ARS' ? 'money' : 'ratio') : c.key === 'costoTransferencia' ? (COBROS_FIJOS[cobroT]?.moneda === 'ARS' ? 'money' : 'ratio') : c.kind());
+  const e = { modoMonto: sel['modo-monto'] ?? 'unidades' };
+  for (const c of CAMPOS) {
+    const raw = campos[c.el] ?? '';
+    if (v1 && c.key === 'relacionConversion' && raw.trim() === '1') { e[c.key] = null; continue; }
+    const p = parseNumberAR(raw, { kind: kindDe(c) });
+    e[c.key] = c.costo && esNoAplica(raw) ? NO_APLICA : !p.ok ? INVALIDO : p.empty ? null : p.value;
+  }
+  e.otrosCostos = { monto: e.otrosCostos, cobro: cobroO };
+  e.costoTransferencia = { monto: e.costoTransferencia, cobro: cobroT };
+  e.impuestoFiscal = sel['impuesto-fiscal'] ?? 'pendiente';
+  e.ivaFiscal = sel['iva-fiscal'] ?? 'pendiente';
+  const compra = sel['mercado-compra'] ?? 'oficial';
+  const venta = sel['mercado-venta'] ?? 'blue';
+  e.requiereConversion = compra !== venta;
+  if (compra === venta) e.relacionConversion = null;
+  e.relacionHipotesis = compra !== venta && s.checks?.['relacion-hipotesis'] === true;
+  return { entrada: e, compra, venta };
+}
+
+/** Cómo habría dado una simulación simple guardada con los precios de cada captura (mismos costos y monto). */
+function evolucionSimple(id, lista) {
+  const r = historial?.registros().find((x) => x.id === id);
+  if (!r || r.tipo !== 'simple') return [];
+  const { entrada, compra, venta } = entradaDesdeGuardada(r.entrada.simple);
+  return lista.map((c) => {
+    const base = c.mercados[compra];
+    const vta = c.mercados[venta];
+    if (!base?.valido || !base.venta || !vta?.valido || !vta.compra) return { at: c.at, ok: false, motivo: 'Esa captura no tiene los precios de los dos mercados.' };
+    const x = calcularSimple({ ...entrada, cotizacionBase: base.venta, precioVenta: vta.compra });
+    if (!x.ok) return { at: c.at, ok: false, motivo: x.datosInsuficientes ? 'DATOS INSUFICIENTES' : x.errors[0]?.message ?? 'No se pudo calcular.' };
+    return { at: c.at, ok: true, roiPct: Number(x.result.roiPct.toFixed(6)), resultado: `${x.calidad.nivel === 'incompleto' ? '≤ ' : x.calidad.nivel === 'estimado' ? '≈ ' : ''}${formatARSSigned(x.result.resultadoNeto)}`, nivel: x.calidad.nivel };
+  });
+}
+
+/* ---------- Ciclo ---------- */
+function recalcular() {
+  const entrada = leerFormulario();
+  actualizarPrecioFinal(entrada);
+  renderResultado(calcularSimple(entrada), entrada);
+  avisoOcultos();
+  oportunidades?.render();
+  guardarFormulario();
+  actualizarBarra();
+}
+
+function renderTodo() {
+  renderEstadoConsulta();
+  renderAvisoManuales();
+  renderCotizaciones();
+  if ($('#calidad-cot').open) renderCalidad();
+  sincronizarPrecios();
+  recalcular();
+  rutas?.alActualizarCotizaciones();
+}
+
+/* ---------- Modos: calculadora simple / simulador por pasos ---------- */
+function cambiarModo(modo) {
+  const esRutas = modo === 'rutas';
+  if (esRutas) subirNivel('profesional', 'mostrarte el simulador por pasos');
+  $('#tab-simple').setAttribute('aria-selected', String(!esRutas));
+  $('#tab-rutas').setAttribute('aria-selected', String(esRutas));
+  $('#tab-simple').tabIndex = esRutas ? -1 : 0;
+  $('#tab-rutas').tabIndex = esRutas ? 0 : -1;
+  $('#panel-simple').hidden = esRutas;
+  $('#panel-rutas').hidden = !esRutas;
+  storage.set(KEY_MODO, esRutas ? 'rutas' : 'simple');
+  actualizarBarra();
+}
+
+function bindModos() {
+  $('#tab-simple').addEventListener('click', () => cambiarModo('simple'));
+  $('#tab-rutas').addEventListener('click', () => cambiarModo('rutas'));
+  $('.tabs').addEventListener('keydown', (ev) => {
+    if (ev.key !== 'ArrowRight' && ev.key !== 'ArrowLeft') return;
+    const siguiente = $('#tab-simple').getAttribute('aria-selected') === 'true' ? 'rutas' : 'simple';
+    cambiarModo(siguiente);
+    $(siguiente === 'rutas' ? '#tab-rutas' : '#tab-simple').focus();
+  });
+  $('#resultado').addEventListener('click', (ev) => {
+    if (ev.target.id !== 'abrir-como-ruta') return;
+    const conv = rutas.cargarDesdeSimple(leerFormulario(), $('#mercado-compra').value, $('#mercado-venta').value);
+    if (!conv.ok) return;
+    cambiarModo('rutas');
+    $('#h-sim').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
+/** Hipótesis explícita: 1 a 1, marcada como hipótesis (el resultado queda ESTIMADO, nunca "completo"). */
+function probarUnoAUno() {
+  if (mismoInstrumento()) return;
+  $('#relacion').value = '1';
+  $('#relacion-hipotesis').checked = true;
+  recalcular();
+}
+
+function cambiarMercado() {
+  sim.overrideBase = false;
+  sim.overrideVenta = false;
+  sim.guardada = null;
+  sincronizarPrecios();
+  recalcular();
+}
+
+/* ---------- Historial ---------- */
+function avisar(msg) {
+  const t = $('#toast');
+  if (!t || !msg) return;
+  t.textContent = msg;
+  t.hidden = false;
+  clearTimeout(avisar.timer);
+  avisar.timer = setTimeout(() => { t.hidden = true; }, 4000);
+}
+
+/** Cotización usada por la calculadora simple, con su fuente, para guardarla. */
+function cotizacionUsada(id, punta, override, valor, indice) {
+  const m = cot.mercados[id];
+  const def = mercadoPorId(id);
+  const v = valor && valor !== INVALIDO ? plain(valor) : null;
+  const etiqueta = `${def.nombre} ${punta}`;
+  const unidad = `ARS por 1 ${def.unidad}`;
+  if (override) {
+    const previa = sim.guardada?.cotizaciones?.[indice];
+    if (sim.guardada?.[indice === 0 ? 'base' : 'venta'] && previa?.valor === v) return previa;
+    return { etiqueta, valor: v, unidad, fuente: 'Cargado a mano en la calculadora', fecha: null, estado: null, confirmada: null };
+  }
+  const manual = m.origen === 'manual';
+  return {
+    etiqueta, valor: v, unidad,
+    fuente: manual ? `Manual${m.fuenteManual ? ` · ${m.fuenteManual}` : ''}` : `${m.fuente}${m.fuenteOriginal ? ` · origen: ${m.fuenteOriginal}` : ''}`,
+    fecha: manual ? m.editadoAt : m.fechaFuente, estado: estadoDe(id).estado, confirmada: null,
+  };
+}
+
+function capturarSimple() {
+  const entrada = leerFormulario();
+  const calculo = calcularSimple(entrada);
+  const c = $('#mercado-compra').value;
+  const v = $('#mercado-venta').value;
+  const d = datosFormulario();
+  const montoTxt = $('#monto').value.trim();
+  const nombre = `${mercadoPorId(c).nombre} → ${mercadoPorId(v).nombre} · ${$('#modo-monto').value === 'ars' ? `$ ${montoTxt}` : `${montoTxt} ${mercadoPorId(c).unidad}`}`;
+  return {
+    tipo: 'simple',
+    nombre,
+    // Se guarda con los precios fijos: al abrirla se ven los de ese momento, no los de hoy.
+    entrada: { simple: { version: 3, campos: d.campos, selects: d.selects, checks: d.checks, overrideBase: true, overrideVenta: true } },
+    cotizaciones: [
+      cotizacionUsada(c, 'venta', sim.overrideBase, entrada.cotizacionBase, 0),
+      cotizacionUsada(v, 'compra', sim.overrideVenta, entrada.precioVenta, 1),
+    ],
+    resumen: resumenDeSimple(calculo),
+    plataformas: [],
+    motor: calculo.result?.version ?? null,
+    traza: trazaDeSimple(calculo),
+  };
+}
+
+function abrirSimple(r) {
+  const s = r.entrada.simple;
+  for (const c of CAMPOS) document.getElementById(c.el).value = '';
+  const convertido = aplicarFormulario({ ...s, version: s.version ?? 1 });
+  sim.overrideBase = s.overrideBase;
+  sim.notaGuardada = null;
+  sim.overrideVenta = s.overrideVenta;
+  sim.guardada = { nombre: r.nombre, fecha: r.creadaAt, cotizaciones: r.cotizaciones, base: s.overrideBase, venta: s.overrideVenta };
+  cambiarModo('simple');
+  sincronizarPrecios();
+  sim.notaGuardada = compararConGuardado(r, resumenDeSimple(calcularSimple(leerFormulario())));
+  recalcular();
+  irASimulacion();
+  avisar(convertido && s.version !== 3
+    ? `Abriste «${r.nombre}» (guardada con la versión anterior): los costos vacíos ahora cuentan como "No sé" y la conversión ya no se supone 1 a 1.`
+    : `Abriste «${r.nombre}». Los precios son los guardados; "Usar la del mercado" trae los de hoy.`);
+}
+
+/**
+ * Si el motor actual da otro resultado que el guardado (por ejemplo, porque ahora un costo vacío es "No sé"),
+ * se muestran los dos. Lo guardado nunca se modifica en silencio.
+ */
+function compararConGuardado(r, ahora) {
+  const antes = r.resumen;
+  const fmt = (s) => (s?.ok && s.resultadoNeto !== null ? (s.moneda === 'ARS' || !s.moneda ? formatARSSigned(s.resultadoNeto) : `${s.resultadoNeto} ${s.moneda}`) : s?.nivel === 'insuficiente' ? 'DATOS INSUFICIENTES' : 'sin resultado');
+  const igualNumero = antes?.ok && ahora?.ok && antes.resultadoNeto !== null && ahora.resultadoNeto !== null
+    && toDec(antes.resultadoNeto).round(2, 1).eq(toDec(ahora.resultadoNeto).round(2, 1));
+  const igualNivel = (antes?.nivel ?? null) === null || antes.nivel === ahora?.nivel;
+  if (igualNumero && igualNivel) return null;
+  const motor = r.motor ? `el motor ${r.motor}` : 'el motor anterior (Brecha 2: un costo vacío contaba como 0 y la conversión se suponía 1 a 1)';
+  return `Esta simulación se guardó con ${motor} y dio ${fmt(antes)}${antes?.nivel ? ` (${antes.nivel})` : ''}. Con el motor actual da ${fmt(ahora)}${ahora?.nivel ? ` (${ahora.nivel})` : ''}. Lo guardado no se modificó.`;
+}
+
+function abrirRuta(r) {
+  const b = restaurarBorrador(structuredClone(r.entrada.ruta));
+  let nota = '';
+  if (b) {
+    const { entrada } = normalizar(b);
+    const ahora = resumenDeRuta(simularRuta({ ...entrada, estresPct: null }, { activosValidos: IDS_ACTIVOS, decimales: DECIMALES, nombres: NOMBRES, objetivos: false }), null);
+    nota = compararConGuardado(r, ahora) ?? '';
+  }
+  if (!rutas.cargarBorrador(r.entrada.ruta, `Abriste «${r.nombre}» (guardada ${fecha(r.creadaAt)}). Las confirmaciones vencidas hay que renovarlas.${nota ? ` ${nota}` : ''}`)) return;
+  cambiarModo('rutas');
+  irASimulacion();
+  avisar(`Abriste «${r.nombre}».`);
+}
+
+function bind() {
+  $('#btn-actualizar').addEventListener('click', () => actualizarCotizaciones('manual'));
+  $('#politica').addEventListener('change', (ev) => {
+    const id = ev.target.dataset?.politica;
+    if (id) aplicarPolitica(id, ev.target.value);
+  });
+  $('#politica').addEventListener('change', (ev) => {
+    const k = ev.target.dataset?.cal;
+    if (!k) return;
+    calendario = restaurarCalendario({ ...calendario, [k]: ev.target.value.split(/[\s,;]+/).filter(Boolean) });
+    storage.set(KEY_CAL, calendario);
+    renderCalendario();
+    renderTodo();
+  });
+  $('#calidad-cot').addEventListener('toggle', () => { if ($('#calidad-cot').open) renderCalidad(); });
+  $('#calidad-cot').addEventListener('change', (ev) => {
+    const k = ev.target.dataset?.contraste;
+    if (!k) return;
+    const [id, campo] = k.split('.');
+    contraste = restaurarContraste({ ...contraste, [id]: { ...(contraste[id] ?? {}), [campo]: ev.target.value } });
+    storage.set(KEY_CONTRASTE, contraste);
+    renderTodo();
+  });
+  $('#politica-restablecer').addEventListener('click', () => {
+    politica = restaurarPolitica(null);
+    storage.set(KEY_POLITICA, politica);
+    renderPolitica();
+    renderTodo();
+  });
+
+  $('#form-sim').addEventListener('input', (ev) => {
+    sim.notaGuardada = null;
+    const id = ev.target.id;
+    if (id === 'cotizacion-base') { sim.overrideBase = true; if (sim.guardada) sim.guardada.base = false; }
+    if (id === 'precio-venta') { sim.overrideVenta = true; if (sim.guardada) sim.guardada.venta = false; }
+    if (id === 'cotizacion-base' || id === 'precio-venta') {
+      $('#reset-base').hidden = !sim.overrideBase;
+      $('#reset-venta').hidden = !sim.overrideVenta;
+      $('#cotizacion-base-src').textContent = textoFuente($('#mercado-compra').value, 'venta', sim.overrideBase);
+      $('#precio-venta-src').textContent = textoFuente($('#mercado-venta').value, 'compra', sim.overrideVenta);
+    }
+    if (ev.target.tagName === 'INPUT') recalcular();
+  });
+  $('#form-sim').addEventListener('change', (ev) => {
+    const id = ev.target.id;
+    if (id === 'mercado-compra' || id === 'mercado-venta') cambiarMercado();
+    else if (ev.target.tagName === 'SELECT' || ev.target.type === 'checkbox') recalcular();
+  });
+  const marcarNoAplica = (inputId) => {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    el.value = 'no aplica';
+    recalcular();
+  };
+  $('#form-sim').addEventListener('click', (ev) => {
+    const na = ev.target.closest('[data-na]');
+    if (na) { marcarNoAplica(na.dataset.na); return; }
+    if (ev.target.id === 'relacion-probar') probarUnoAUno();
+  });
+  // Acciones desde el resultado: completar lo que falta sin buscar el campo.
+  $('#resultado').addEventListener('click', (ev) => {
+    const na = ev.target.closest('[data-na-campo]');
+    if (na) { marcarNoAplica(INPUT_DE[na.dataset.naCampo]); return; }
+    const cargar = ev.target.closest('[data-cargar-campo]');
+    if (cargar) {
+      const el = document.getElementById(INPUT_DE[cargar.dataset.cargarCampo]);
+      const nivelCampo = el?.closest('[data-desde]')?.dataset.desde;
+      if (nivelCampo) subirNivel(nivelCampo, 'que puedas cargarlo');
+      el?.closest('details')?.setAttribute('open', '');
+      el?.focus();
+      return;
+    }
+    if (ev.target.closest('[data-accion-simple="probar-1a1"]')) probarUnoAUno();
+    if (ev.target.closest('[data-accion-simple="todos-no-aplican"]')) {
+      // Declaración explícita: los costos que están en "No sé" pasan a "no aplica".
+      for (const c of CAMPOS) if (c.costo && !$(`#${c.el}`).value.trim()) $(`#${c.el}`).value = 'no aplica';
+      recalcular();
+    }
+  });
+  $('#nivel-uso').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-nivel-uso]');
+    if (b) aplicarNivel(b.dataset.nivelUso);
+  });
+  $('#aviso-ocultos').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-subir-nivel]');
+    if (b) aplicarNivel(b.dataset.subirNivel);
+  });
+  $('#form-sim').addEventListener('submit', (ev) => ev.preventDefault());
+  $('#mas-costos').addEventListener('toggle', guardarFormulario);
+  $('#reset-base').addEventListener('click', () => { sim.overrideBase = false; if (sim.guardada) sim.guardada.base = false; sincronizarPrecios(); recalcular(); });
+  $('#reset-venta').addEventListener('click', () => { sim.overrideVenta = false; if (sim.guardada) sim.guardada.venta = false; sincronizarPrecios(); recalcular(); });
+
+  // Edición de tarjetas: se aplica al confirmar (Enter o salir del campo) para no perder el foco.
+  $('#cotizaciones').addEventListener('change', (ev) => {
+    const t = ev.target;
+    if (t.dataset.fuente) {
+      cot = editarFuenteManual(cot, t.dataset.fuente, t.value);
+      guardarCot();
+      renderTodo();
+      return;
+    }
+    if (!t.dataset.id) return;
+    const p = parseNumberAR(t.value, { kind: 'money' });
+    const err = document.querySelector(`[data-error="${t.dataset.id}"]`);
+    if (!p.ok || (!p.empty && p.value.lte(0))) {
+      err.textContent = `${mercadoPorId(t.dataset.id).nombre}: ${p.ok ? 'tiene que ser mayor que 0' : p.error}. No se guardó.`;
+      err.hidden = false;
+      t.setAttribute('aria-invalid', 'true');
+      return;
+    }
+    cot = editarManual(cot, t.dataset.id, t.dataset.punta, p.empty ? null : p.value.toString());
+    guardarCot();
+    renderTodo();
+  });
+  $('#cotizaciones').addEventListener('click', (ev) => {
+    const id = ev.target.dataset?.volver;
+    if (!id) return;
+    cot = volverAAPI(cot, id);
+    guardarCot();
+    renderTodo();
+  });
+  $('#aviso-manuales').addEventListener('click', (ev) => {
+    if (ev.target.id === 'reemplazar-manuales') {
+      for (const id of cot.ultimaConsulta.conservados) if (cot.mercados[id].origen === 'manual') cot = volverAAPI(cot, id);
+      cot.ultimaConsulta.conservados = [];
+    } else if (ev.target.id === 'cerrar-aviso') {
+      cot.ultimaConsulta.conservados = [];
+    } else return;
+    guardarCot();
+    renderTodo();
+  });
+}
+
+/* ---------- Matriz → simuladores ---------- */
+function irASimulacion() {
+  $('#h-sim').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function elegirSimple(c, v) {
+  $('#mercado-compra').value = c;
+  $('#mercado-venta').value = v;
+  cambiarModo('simple');
+  cambiarMercado();
+  irASimulacion();
+}
+function elegirRuta(entrada, notas, titulo) {
+  rutas.cargarEntrada(entrada, { notas, mensaje: `Abriste ${titulo} desde el resultado neto.`, fuente: 'Desde el resultado neto (cotización de referencia)' });
+  cambiarModo('rutas');
+  irASimulacion();
+}
+
+/* ---------- Barra de resultado en celular ---------- */
+const visibles = { resultado: false, 'ruta-resultado': false };
+function resultadoActivo() {
+  return $('#panel-rutas').hidden ? $('#resultado') : $('#ruta-resultado');
+}
+function actualizarBarra() {
+  const barra = $('#barra-resultado');
+  if (!barra) return;
+  const res = resultadoActivo();
+  const angosto = window.matchMedia('(max-width: 860px)').matches;
+  const nivel = res.dataset.nivel;
+  const tituloEl = res.querySelector('.headline .res-title')?.cloneNode(true);
+  tituloEl?.querySelectorAll('.badge').forEach((b) => b.remove());
+  const titulo = tituloEl ? tituloEl.textContent.trim() : '';
+  const numero = res.querySelector('.headline .big')?.textContent.replace(/\s+/g, ' ').trim();
+  const roi = res.querySelector('.headline .roi')?.textContent.replace(/\s+/g, ' ').trim();
+  const etiqueta = { incompleto: 'INCOMPLETO', estimado: 'ESTIMADO' }[nivel];
+  $('#barra-texto').textContent = numero
+    ? `${etiqueta ? `${etiqueta} · ` : ''}${titulo}: ${numero}${roi ? ` · ${roi}` : ''}`
+    : nivel === 'insuficiente' ? 'DATOS INSUFICIENTES: falta un dato para calcular' : 'Faltan datos para calcular';
+  const tono = res.querySelector('.headline')?.classList;
+  barra.dataset.tono = tono?.contains('pos') ? 'pos' : tono?.contains('neg') ? 'neg' : 'neu';
+  // Con el teclado del celular abierto, la barra se esconde para no tapar el campo que estás escribiendo.
+  barra.hidden = !angosto || visibles[res.id] || document.body.classList.contains('editando');
+  document.body.classList.toggle('con-barra', !barra.hidden);
+}
+
+/** ¿Se está escribiendo en un campo? (en celular, eso abre el teclado virtual) */
+function bindTeclado() {
+  const esCampo = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') && el.type !== 'checkbox' && el.type !== 'button';
+  document.addEventListener('focusin', (ev) => {
+    if (!esCampo(ev.target)) return;
+    document.body.classList.add('editando');
+    actualizarBarra();
+  });
+  document.addEventListener('focusout', () => {
+    // Se espera un instante: el foco puede estar pasando a otro campo.
+    setTimeout(() => {
+      if (esCampo(document.activeElement)) return;
+      document.body.classList.remove('editando');
+      actualizarBarra();
+    }, 120);
+  });
+  window.visualViewport?.addEventListener('resize', () => {
+    const teclado = window.visualViewport.height < window.innerHeight * 0.75;
+    document.body.classList.toggle('editando', teclado || esCampo(document.activeElement));
+    actualizarBarra();
+  });
+}
+function bindBarra() {
+  if ('IntersectionObserver' in window) {
+    const obs = new IntersectionObserver((entradas) => {
+      for (const e of entradas) visibles[e.target.id] = e.isIntersecting;
+      actualizarBarra();
+    }, { threshold: 0.15 });
+    obs.observe($('#resultado'));
+    obs.observe($('#ruta-resultado'));
+  }
+  window.addEventListener('resize', actualizarBarra);
+  $('#barra-ver').addEventListener('click', () => resultadoActivo().scrollIntoView({ behavior: 'smooth', block: 'start' }));
+}
+
+/* ---------- Niveles de uso: Rápido / Avanzado / Profesional ---------- */
+/** Nivel guardado; si no hay, un usuario que ya usaba Brecha arranca en Profesional (no le desaparece nada). */
+function nivelInicial() {
+  const g = storage.get(KEY_NIVEL);
+  if (NIVELES_USO.includes(g)) return g;
+  try {
+    for (let i = 0; i < localStorage.length; i++) if (localStorage.key(i)?.startsWith('brecha.')) return 'profesional';
+  } catch { /* sin almacenamiento */ }
+  return 'rapido';
+}
+function aplicarNivel(n) {
+  nivelUso = NIVELES_USO.includes(n) ? n : 'profesional';
+  document.body.dataset.uso = nivelUso;
+  storage.set(KEY_NIVEL, nivelUso);
+  for (const b of document.querySelectorAll('#nivel-uso [data-nivel-uso]')) b.setAttribute('aria-pressed', String(b.dataset.nivelUso === nivelUso));
+  $('#nivel-desc').textContent = NIVEL_UI[nivelUso].d;
+  if (rangoNivel(nivelUso) < 2) {
+    if (!$('#panel-rutas').hidden) cambiarModo('simple');
+    if ($('[data-vista="ranking"]')?.getAttribute('aria-pressed') === 'true') $('[data-vista="bruta"]').click();
+  }
+  avisoOcultos();
+  actualizarBarra();
+}
+/** Sube al nivel que hace falta para lo que pediste (nunca baja). */
+function subirNivel(minimo, para) {
+  if (rangoNivel(nivelUso) >= rangoNivel(minimo)) return;
+  aplicarNivel(minimo);
+  avisar(`Pasé al nivel ${NIVEL_UI[minimo].t} para ${para}.`);
+}
+/** En Rápido: si hay datos cargados en campos que no se ven, se avisa (se siguen usando en el cálculo). */
+function avisoOcultos() {
+  const box = $('#aviso-ocultos');
+  if (!box) return;
+  const ocultos = rangoNivel(nivelUso) === 0
+    ? [...$('#form-sim').querySelectorAll('[data-desde] input[type="text"]')].filter((i) => i.value.trim() !== '') : [];
+  box.hidden = !ocultos.length;
+  if (!ocultos.length) { box.innerHTML = ''; return; }
+  const nombres = ocultos.map((i) => document.querySelector(`label[for="${i.id}"]`)?.childNodes[0]?.textContent.trim() || i.id);
+  box.innerHTML = `<p>Hay ${ocultos.length === 1 ? '1 dato cargado' : `${ocultos.length} datos cargados`} en campos que el nivel Rápido no muestra (${esc(nombres.join(', '))}): se siguen usando en el cálculo.</p>
+    <div class="banner-actions"><button type="button" class="btn small" data-subir-nivel="avanzado">Mostrarlos (nivel Avanzado)</button></div>`;
+}
+
+/* ---------- Tema ---------- */
+const TEMAS = { auto: { t: 'Auto', a: 'automático' }, light: { t: 'Claro', a: 'claro' }, dark: { t: 'Oscuro', a: 'oscuro' } };
+function aplicarTema(tema) {
+  const t = Object.hasOwn(TEMAS, tema) ? tema : 'auto';
+  if (t === 'auto') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t;
+  const b = $('#btn-tema');
+  b.textContent = `◐ ${TEMAS[t].t}`;
+  b.setAttribute('aria-label', `Tema: ${TEMAS[t].a}. Cambiar tema`);
+  b.dataset.tema = t;
+  storage.set(KEY_TEMA, t);
+}
+function bindTema() {
+  aplicarTema(storage.get(KEY_TEMA));
+  $('#btn-tema').addEventListener('click', () => {
+    const orden = ['auto', 'light', 'dark'];
+    aplicarTema(orden[(orden.indexOf($('#btn-tema').dataset.tema) + 1) % orden.length]);
+  });
+}
+
+function init() {
+  const nivel = nivelInicial(); // antes de que se guarde cualquier otra cosa
+  bindTema();
+  analisis = crearAnalisis({ storage, fecha, getCal: () => calendario });
+  llenarSelects();
+  restaurarFormulario();
+  bind();
+  const plataformas = crearPlataformas({ root: $('#plataformas-campos'), storage, onCambio: () => rutas?.render() });
+  rutas = crearSimuladorRutas({
+    getPlataformas: () => plataformas.lista(),
+    editor: $('#ruta-editor'),
+    resultado: $('#ruta-resultado'),
+    getMercados: () => mercadosUsables(),
+    estadoMercado: (id) => estadoDe(id),
+    analisis,
+    storage,
+    fecha,
+    hace,
+    onCambio: () => {
+      oportunidades?.render();
+      actualizarBarra();
+    },
+    accionesResultado: () => historial?.botones('ruta') ?? '',
+  });
+  historial = crearHistorial({
+    root: $('#historial'),
+    storage,
+    fecha,
+    capturar: { simple: capturarSimple, ruta: () => rutas.capturar() },
+    onAbrir: (r) => (r.tipo === 'simple' ? abrirSimple(r) : abrirRuta(r)),
+    onActivo: () => { recalcular(); rutas.refrescar(); },
+    avisar,
+  });
+  document.addEventListener('click', (ev) => {
+    const g = ev.target.closest('[data-guardar], [data-actualizar]');
+    if (!g) return;
+    historial.guardar(g.dataset.guardar ?? g.dataset.actualizar, !!g.dataset.actualizar);
+  });
+  oportunidades = crearOportunidades({
+    root: $('#oportunidades'),
+    getMercados: () => mercadosUsables(),
+    estadoDe,
+    storage,
+    getSeleccion: () => `${$('#mercado-compra').value}>${$('#mercado-venta').value}`,
+    onElegirSimple: elegirSimple,
+    onElegirRuta: elegirRuta,
+    onIrARuta: () => { cambiarModo('rutas'); irASimulacion(); },
+    getRutaResumen: () => rutas.resumen(),
+  });
+  capturas = crearCapturas({
+    root: $('#capturas-campos'), storage, getMercados: () => cot.mercados, fecha, avisar,
+    getSimulaciones: () => historial.registros(), evolucion: evolucionSimple,
+  });
+  analisis.enlazar($('#resultado'), 'simple', datosAnalisisSimple);
+  crearBonos({
+    root: $('#bonos-campos'), storage, avisar,
+    getReferencia: (mercado, punta) => precioMercado(mercado, punta),
+    aplicarSimple: (d) => {
+      const tc = formatNumberAR(d.tc, { decimals: 12, minDecimals: 0 });
+      if (d.sentido === 'comprar_usd') {
+        $('#mercado-compra').value = d.mercado;
+        cambiarMercado();
+        $('#cotizacion-base').value = tc;
+        sim.overrideBase = true;
+        for (const id of ['com-compra', 'impuesto']) $(`#${id}`).value = 'no aplica';
+      } else {
+        $('#mercado-venta').value = d.mercado;
+        cambiarMercado();
+        $('#precio-venta').value = tc;
+        sim.overrideVenta = true;
+        $('#com-venta').value = 'no aplica';
+      }
+      cambiarModo('simple');
+      sincronizarPrecios();
+      recalcular();
+      irASimulacion();
+      avisar(`${d.detalle}. Los costos de ese lado quedaron como «no aplica» para no cobrarlos dos veces.${d.incompleto ? ' Ojo: el cálculo con bonos tenía costos en «No sé».' : ''}`);
+    },
+    aplicarRuta: (d) => rutas.aplicarBonos(d),
+  });
+  bindModos();
+  bindBarra();
+  aplicarNivel(nivel);
+  cambiarModo(storage.get(KEY_MODO) === 'rutas' && nivel === 'profesional' ? 'rutas' : 'simple');
+  renderPolitica();
+  renderTodo();
+  bindTeclado();
+  actualizarCotizaciones('auto');
+  if (sim.avisoMigracion) avisar(sim.avisoMigracion);
+  setInterval(refrescarEdades, 60000);
+  window.brechaLista = true; // arrancó: los errores posteriores ya no son "no pudo arrancar" (ver index.html)
+}
+
+init();
+
+// Para depurar desde la consola (no se usa en la app).
+window.__brecha = { get estado() { return cot; }, reset: () => { cot = estadoInicial(); guardarCot(); renderTodo(); }, manuales: () => manuales(cot) };
