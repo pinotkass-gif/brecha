@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="es-AR">
+<html lang="es-AR" data-plataforma="celular" data-otra="web/">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Brecha</title>
   <meta name="description" content="Simulador cambiario personal: oficial, blue, MEP, CCL y cripto. Sólo simulación.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f766e'/%3E%3Cpath d='M8 21l6-6 4 4 6-8' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
@@ -16,6 +16,14 @@
     window.addEventListener('error', function () { if (!window.brechaLista) window.brechaFallo(); });
   </script>
   <script type="module" src="src/ui/app.mjs" onerror="brechaFallo()"></script>
+  <link rel="manifest" href="src/pwa/manifest.webmanifest">
+  <meta name="theme-color" content="#0f766e" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)">
+  <link rel="apple-touch-icon" href="src/pwa/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Brecha">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
 </head>
 <body>
   <header class="top">
@@ -38,11 +46,12 @@
     </div>
   </header>
 
+  <div id="sugerir-celular" class="banner sugerir-celular"><p>¿Estás en el celular? La versión celular es más cómoda: pestañas abajo y se instala como app.</p><a class="btn small" data-otra-version href="#">Abrir la versión celular</a></div>
   <div id="fallo-arranque" class="banner" role="alert" hidden><p><strong>Brecha no pudo arrancar</strong>: no se cargó una parte de la app. Recargá la página (F5). Tus simulaciones guardadas no se pierden.</p></div>
   <div id="aviso-manuales" class="banner" role="status" hidden></div>
 
   <main>
-    <section aria-labelledby="h-cot" class="block">
+    <section aria-labelledby="h-cot" class="block" id="sec-cotizaciones">
       <div class="block-head">
         <h2 id="h-cot">Cotizaciones de referencia</h2>
         <p class="hint">Precios informativos, no garantizados de ejecución. Compra = lo que te pagan; venta = lo que pagás. Podés editarlos.</p>
@@ -64,7 +73,7 @@
       </details>
     </section>
 
-    <section aria-labelledby="h-sim" class="block sim">
+    <section aria-labelledby="h-sim" class="block sim" id="sec-simulacion">
       <div class="block-head">
         <h2 id="h-sim">Simulación</h2>
         <div class="tabs" role="tablist" aria-label="Modo de simulación" data-desde="profesional">
@@ -288,6 +297,14 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
+  <!-- Versión celular: pestañas abajo (en la versión web no se muestran) -->
+  <nav id="pestanas" class="pestanas" aria-label="Secciones">
+    <button type="button" data-seccion="sec-simulacion"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M14 11h2M8 15h2M14 15h2"/></svg><span>Calcular</span></button>
+    <button type="button" data-seccion="sec-cotizaciones"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 4 7-8"/><path d="M15 8h5v5"/></svg><span>Cotizaciones</span></button>
+    <button type="button" data-seccion="oportunidades" data-desde="avanzado"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg><span>Mercados</span></button>
+    <button type="button" data-seccion="historial"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><span>Historial</span></button>
+  </nav>
+
   <div id="barra-resultado" class="barra" hidden>
     <p id="barra-texto" aria-live="off"></p>
     <button type="button" class="btn small" id="barra-ver">Ver resultado</button>
@@ -295,6 +312,7 @@
 
   <footer class="foot">
     <p><strong>Alcance.</strong> Brecha es una simulación matemática. No determina si una operación está habilitada, si hay liquidez para el monto ni si corresponden restricciones cambiarias. Los dólares locales, los dólares cable y los activos cripto no son equivalentes y pueden requerir conversiones adicionales. Cotizaciones: <a href="https://dolarapi.com/docs/argentina/" rel="noopener" target="_blank">DolarAPI</a> (sin afiliación).</p>
+    <p><a id="otra-version" data-otra-version href="#" hidden></a></p>
   </footer>
 </body>
 </html>

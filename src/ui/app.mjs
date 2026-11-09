@@ -44,6 +44,10 @@ const NIVEL_UI = {
   profesional: { t: 'Profesional', d: 'Todo: rutas por pasos, liquidez, escenarios, sensibilidad, estrés, confirmaciones, bonos, perfiles y capturas.' },
 };
 const rangoNivel = (n) => NIVELES_USO.indexOf(n);
+/** Versión: 'celular' (pestañas abajo, compacta) o 'web' (compu). La define index.html (scripts/variantes.mjs). */
+const PLATAFORMA = document.documentElement.dataset.plataforma === 'celular' ? 'celular' : 'web';
+const KEY_SECCION = 'brecha.seccion.v1';
+const SECCIONES = ['sec-simulacion', 'sec-cotizaciones', 'oportunidades', 'historial'];
 let nivelUso = 'profesional';
 const INVALIDO = '__invalido__';
 const PROVEEDOR = proveedorPorDefecto;
@@ -776,7 +780,7 @@ function bindModos() {
     const conv = rutas.cargarDesdeSimple(leerFormulario(), $('#mercado-compra').value, $('#mercado-venta').value);
     if (!conv.ok) return;
     cambiarModo('rutas');
-    $('#h-sim').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    irASimulacion();
   });
 }
 
@@ -1032,7 +1036,43 @@ function bind() {
 
 /* ---------- Matriz → simuladores ---------- */
 function irASimulacion() {
-  $('#h-sim').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  mostrarSeccion('sec-simulacion');
+  $('#h-sim').scrollIntoView({ behavior: PLATAFORMA === 'celular' ? 'auto' : 'smooth', block: 'start' });
+}
+
+/* ---------- Versión celular: una sección a la vez, con pestañas abajo ---------- */
+function mostrarSeccion(id) {
+  if (PLATAFORMA !== 'celular') return;
+  let s = SECCIONES.includes(id) ? id : 'sec-simulacion';
+  if (s === 'oportunidades' && rangoNivel(nivelUso) < 1) s = 'sec-simulacion'; // la matriz es del nivel Avanzado
+  const cambio = document.body.dataset.seccion !== s;
+  document.body.dataset.seccion = s;
+  for (const b of document.querySelectorAll('#pestanas [data-seccion]')) {
+    if (b.dataset.seccion === s) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  }
+  storage.set(KEY_SECCION, s);
+  if (cambio) window.scrollTo(0, 0);
+  if (s === 'sec-cotizaciones' && $('#calidad-cot').open) renderCalidad();
+  actualizarBarra();
+}
+function bindPestanas() {
+  $('#pestanas').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-seccion]');
+    if (b) mostrarSeccion(b.dataset.seccion);
+  });
+  // Link a la otra versión (celular ↔ compu), relativo a la raíz de la app
+  const otra = document.documentElement.dataset.otra;
+  for (const a of document.querySelectorAll('[data-otra-version]')) {
+    if (!otra) { a.hidden = true; continue; }
+    a.href = otra;
+    if (a.id === 'otra-version') { a.textContent = PLATAFORMA === 'celular' ? 'Abrir la versión para compu' : 'Abrir la versión celular'; a.hidden = false; }
+  }
+  if (PLATAFORMA === 'celular') mostrarSeccion(storage.get(KEY_SECCION) ?? 'sec-simulacion');
+}
+/** Publicada (https): un service worker guarda la app para abrirla sin internet. En la compu local no se usa. */
+function registrarSinConexion() {
+  if (location.protocol !== 'https:' || !('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register(new URL('sw.js', document.baseURI)).catch(() => { /* sin service worker la app anda igual */ });
 }
 function elegirSimple(c, v) {
   $('#mercado-compra').value = c;
@@ -1056,7 +1096,8 @@ function actualizarBarra() {
   const barra = $('#barra-resultado');
   if (!barra) return;
   const res = resultadoActivo();
-  const angosto = window.matchMedia('(max-width: 860px)').matches;
+  const angosto = PLATAFORMA === 'celular' || window.matchMedia('(max-width: 860px)').matches;
+  const fueraDeCalcular = PLATAFORMA === 'celular' && document.body.dataset.seccion && document.body.dataset.seccion !== 'sec-simulacion';
   const nivel = res.dataset.nivel;
   const tituloEl = res.querySelector('.headline .res-title')?.cloneNode(true);
   tituloEl?.querySelectorAll('.badge').forEach((b) => b.remove());
@@ -1070,7 +1111,7 @@ function actualizarBarra() {
   const tono = res.querySelector('.headline')?.classList;
   barra.dataset.tono = tono?.contains('pos') ? 'pos' : tono?.contains('neg') ? 'neg' : 'neu';
   // Con el teclado del celular abierto, la barra se esconde para no tapar el campo que estás escribiendo.
-  barra.hidden = !angosto || visibles[res.id] || document.body.classList.contains('editando');
+  barra.hidden = !angosto || fueraDeCalcular || visibles[res.id] || document.body.classList.contains('editando');
   document.body.classList.toggle('con-barra', !barra.hidden);
 }
 
@@ -1125,6 +1166,7 @@ function aplicarNivel(n) {
   storage.set(KEY_NIVEL, nivelUso);
   for (const b of document.querySelectorAll('#nivel-uso [data-nivel-uso]')) b.setAttribute('aria-pressed', String(b.dataset.nivelUso === nivelUso));
   $('#nivel-desc').textContent = NIVEL_UI[nivelUso].d;
+  if (PLATAFORMA === 'celular' && nivelUso === 'rapido' && document.body.dataset.seccion === 'oportunidades') mostrarSeccion('sec-simulacion');
   if (rangoNivel(nivelUso) < 2) {
     if (!$('#panel-rutas').hidden) cambiarModo('simple');
     if ($('[data-vista="ranking"]')?.getAttribute('aria-pressed') === 'true') $('[data-vista="bruta"]').click();
@@ -1254,6 +1296,7 @@ function init() {
   bindModos();
   bindBarra();
   aplicarNivel(nivel);
+  bindPestanas();
   cambiarModo(storage.get(KEY_MODO) === 'rutas' && nivel === 'profesional' ? 'rutas' : 'simple');
   renderPolitica();
   renderTodo();
@@ -1261,6 +1304,7 @@ function init() {
   actualizarCotizaciones('auto');
   if (sim.avisoMigracion) avisar(sim.avisoMigracion);
   setInterval(refrescarEdades, 60000);
+  registrarSinConexion();
   window.brechaLista = true; // arrancó: los errores posteriores ya no son "no pudo arrancar" (ver index.html)
 }
 

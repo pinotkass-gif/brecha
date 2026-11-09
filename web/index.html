@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="es-AR" data-plataforma="web" data-otra="./">
+<head>
+  <meta charset="utf-8">
+  <base href="../">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brecha</title>
+  <meta name="description" content="Simulador cambiario personal: oficial, blue, MEP, CCL y cripto. Sólo simulación.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f766e'/%3E%3Cpath d='M8 21l6-6 4 4 6-8' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="src/ui/styles.css">
+  <script>
+    // Si la app no llega a arrancar (no se cargó un archivo o falló al iniciar), se avisa en vez de quedar una página muda.
+    window.brechaFallo = function () {
+      var mostrar = function () { var d = document.getElementById('fallo-arranque'); if (d) d.hidden = false; };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mostrar); else mostrar();
+    };
+    window.addEventListener('error', function () { if (!window.brechaLista) window.brechaFallo(); });
+  </script>
+  <script type="module" src="src/ui/app.mjs" onerror="brechaFallo()"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>Brecha</h1>
+      <p>Simulador cambiario personal · sólo simulación</p>
+    </div>
+    <div class="nivel-uso">
+      <div class="seg" role="group" aria-label="Nivel de uso" id="nivel-uso">
+        <button type="button" data-nivel-uso="rapido" aria-pressed="false">Rápido</button>
+        <button type="button" data-nivel-uso="avanzado" aria-pressed="false">Avanzado</button>
+        <button type="button" data-nivel-uso="profesional" aria-pressed="false">Profesional</button>
+      </div>
+      <p class="hint" id="nivel-desc"></p>
+    </div>
+    <div class="top-actions">
+      <button id="btn-actualizar" type="button" class="btn primary">Actualizar cotizaciones</button>
+      <button id="btn-tema" type="button" class="btn ghost small" aria-label="Tema: automático">◐ Auto</button>
+      <p id="estado-consulta" class="status" role="status" aria-live="polite"></p>
+    </div>
+  </header>
+
+  <div id="sugerir-celular" class="banner sugerir-celular"><p>¿Estás en el celular? La versión celular es más cómoda: pestañas abajo y se instala como app.</p><a class="btn small" data-otra-version href="#">Abrir la versión celular</a></div>
+  <div id="fallo-arranque" class="banner" role="alert" hidden><p><strong>Brecha no pudo arrancar</strong>: no se cargó una parte de la app. Recargá la página (F5). Tus simulaciones guardadas no se pierden.</p></div>
+  <div id="aviso-manuales" class="banner" role="status" hidden></div>
+
+  <main>
+    <section aria-labelledby="h-cot" class="block" id="sec-cotizaciones">
+      <div class="block-head">
+        <h2 id="h-cot">Cotizaciones de referencia</h2>
+        <p class="hint">Precios informativos, no garantizados de ejecución. Compra = lo que te pagan; venta = lo que pagás. Podés editarlos.</p>
+      </div>
+      <div id="cotizaciones" class="cards"></div>
+      <details id="politica" class="politica" data-desde="avanzado">
+        <summary>Cuándo una cotización se considera antigua</summary>
+        <p class="hint">Oficial, blue, MEP y CCL cuentan horas hábiles (lunes a viernes, hora de Buenos Aires, sin los feriados del calendario de abajo; cada mercado con su horario). Cripto cuenta horas corridas porque opera todos los días. La fecha la informa la fuente: indica cuándo publicó el dato, no que haya habido operaciones a ese precio.</p>
+        <div id="politica-campos" class="pol-grid"></div>
+        <div id="calendario-campos" class="calendario"></div>
+        <button type="button" class="btn ghost small" id="politica-restablecer">Restablecer valores</button>
+        <p class="hint" id="politica-consulta"></p>
+        <p class="hint">Datos de <a href="https://dolarapi.com/docs/argentina/" rel="noopener" target="_blank">DolarAPI</a>, que los toma de DolarHoy (blue, MEP, CCL y cripto) y Ámbito Financiero (oficial). DolarAPI pide guardar una copia local y no consultar en bucle.</p>
+      </details>
+      <details id="calidad-cot" class="politica" data-desde="avanzado">
+        <summary>Calidad de las cotizaciones: control entre mercados</summary>
+        <p class="hint">Compara cada mercado con los demás y con otra fuente que cargues vos. Una diferencia entre mercados no es necesariamente un error: las alertas explican y piden revisar; ningún precio se cambia solo. Sólo lo marcado "No usar" deja de usarse automáticamente.</p>
+        <div id="calidad-campos"></div>
+      </details>
+    </section>
+
+    <section aria-labelledby="h-sim" class="block sim" id="sec-simulacion">
+      <div class="block-head">
+        <h2 id="h-sim">Simulación</h2>
+        <div class="tabs" role="tablist" aria-label="Modo de simulación" data-desde="profesional">
+          <button type="button" role="tab" id="tab-simple" aria-controls="panel-simple" aria-selected="true">Calculadora simple</button>
+          <button type="button" role="tab" id="tab-rutas" aria-controls="panel-rutas" aria-selected="false" tabindex="-1">Simulador por pasos</button>
+        </div>
+      </div>
+      <div id="panel-simple" role="tabpanel" aria-labelledby="tab-simple">
+      <p class="hint panel-hint">Comprás en un mercado y vendés en otro. El resultado sólo descuenta los costos que cargues.</p>
+      <div class="sim-grid">
+        <form id="form-sim" class="form" novalidate autocomplete="off">
+          <fieldset>
+            <legend>Operación</legend>
+            <div class="row two">
+              <div class="field">
+                <label for="monto">Monto</label>
+                <input id="monto" name="monto" type="text" inputmode="decimal" value="1.000" aria-describedby="monto-echo">
+                <small id="monto-echo" class="echo"></small>
+              </div>
+              <div class="field">
+                <label for="modo-monto">Expresado en</label>
+                <select id="modo-monto" name="modoMonto">
+                  <option value="unidades">Unidades de origen (USD)</option>
+                  <option value="ars">Pesos: presupuesto total</option>
+                </select>
+              </div>
+            </div>
+            <div class="row two">
+              <div class="field">
+                <label for="mercado-compra">Comprás en</label>
+                <select id="mercado-compra" name="mercadoCompra"></select>
+              </div>
+              <div class="field">
+                <label for="mercado-venta">Vendés en</label>
+                <select id="mercado-venta" name="mercadoVenta"></select>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Precios</legend>
+            <div class="field">
+              <label for="cotizacion-base">Cotización base de compra <span class="unit">ARS por unidad</span></label>
+              <div class="with-action">
+                <input id="cotizacion-base" name="cotizacionBase" type="text" inputmode="decimal" aria-describedby="cotizacion-base-echo cotizacion-base-src">
+                <button type="button" class="btn ghost small" id="reset-base" hidden>Usar la del mercado</button>
+              </div>
+              <small id="cotizacion-base-src" class="src"></small>
+              <small id="cotizacion-base-echo" class="echo"></small>
+            </div>
+            <div class="field" data-desde="avanzado">
+              <label for="aumento">Sumar al precio de compra <span class="unit">%</span></label>
+              <input id="aumento" name="aumentoPct" type="text" inputmode="decimal" placeholder="Sin aumento" aria-describedby="aumento-echo">
+              <small id="aumento-echo" class="echo"></small>
+            </div>
+            <div class="field computed" data-desde="avanzado">
+              <span class="label" id="precio-final-label">Precio de compra final</span>
+              <output id="precio-final" aria-labelledby="precio-final-label">—</output>
+            </div>
+            <div class="field">
+              <label for="precio-venta">Recibís por unidad <span class="unit">ARS por unidad de destino</span></label>
+              <div class="with-action">
+                <input id="precio-venta" name="precioVenta" type="text" inputmode="decimal" aria-describedby="precio-venta-echo precio-venta-src">
+                <button type="button" class="btn ghost small" id="reset-venta" hidden>Usar la del mercado</button>
+              </div>
+              <small id="precio-venta-src" class="src"></small>
+              <small id="precio-venta-echo" class="echo"></small>
+            </div>
+            <div class="field" id="campo-relacion">
+              <label for="relacion">Relación de conversión <span class="unit" id="relacion-unidad">unidades de destino por unidad de origen</span></label>
+              <div class="with-action">
+                <input id="relacion" name="relacionConversion" type="text" inputmode="decimal" placeholder="No sé" aria-describedby="relacion-echo relacion-hint">
+                <button type="button" class="btn ghost small" id="relacion-probar">Probar 1 a 1 como hipótesis</button>
+              </div>
+              <label class="check"><input type="checkbox" id="relacion-hipotesis"> Es una hipótesis (no la confirmé)</label>
+              <small id="relacion-hint" class="hint"></small>
+              <small id="relacion-echo" class="echo"></small>
+            </div>
+          </fieldset>
+
+          <div id="aviso-ocultos" class="banner ocultos" role="status" hidden></div>
+          <fieldset data-desde="avanzado">
+            <legend>Comisiones y costos</legend>
+            <p class="hint">Vacío = <strong>No sé</strong> (el resultado queda incompleto). Escribí 0 si es cero, o tocá "No aplica" si ese costo no existe.</p>
+            <div class="row two">
+              <div class="field">
+                <label for="com-compra">Comisión de compra <span class="unit">% sobre la compra</span></label>
+                <div class="with-action"><input id="com-compra" name="comisionCompraPct" type="text" inputmode="decimal" placeholder="No sé" aria-describedby="com-compra-echo"><button type="button" class="btn ghost small na" data-na="com-compra" aria-label="Comisión de compra: no aplica">No aplica</button></div>
+                <small id="com-compra-echo" class="echo"></small>
+              </div>
+              <div class="field">
+                <label for="com-venta">Comisión de venta <span class="unit">% sobre lo que cobrás</span></label>
+                <div class="with-action"><input id="com-venta" name="comisionVentaPct" type="text" inputmode="decimal" placeholder="No sé" aria-describedby="com-venta-echo"><button type="button" class="btn ghost small na" data-na="com-venta" aria-label="Comisión de venta: no aplica">No aplica</button></div>
+                <small id="com-venta-echo" class="echo"></small>
+              </div>
+            </div>
+            <div class="row two">
+              <div class="field">
+                <label for="otros">Otros costos fijos</label>
+                <div class="with-action"><input id="otros" name="otrosCostos" type="text" inputmode="decimal" placeholder="No sé" aria-describedby="otros-echo"><button type="button" class="btn ghost small na" data-na="otros" aria-label="Otros costos fijos: no aplica">No aplica</button></div>
+                <small id="otros-echo" class="echo"></small>
+              </div>
+              <div class="field">
+                <label for="otros-cobro">Cómo se cobra</label>
+                <select id="otros-cobro" name="otrosCobro"></select>
+              </div>
+            </div>
+            <details id="mas-costos" class="more">
+              <summary>Más costos: impuestos, IVA, transferencia, slippage</summary>
+              <div class="row two">
+                <div class="field">
+                  <label for="impuesto">Impuestos sobre la compra <span class="unit">% sobre la compra, los cargás vos</span></label>
+                  <div class="with-action"><input id="impuesto" name="impuestoCompraPct" type="text" inputmode="decimal" placeholder="No sé" aria-describedby="impuesto-echo"><button type="button" class="btn ghost small na" data-na="impuesto" aria-label="Impuestos: no aplica">No aplica</button></div>
+                  <small id="impuesto-echo" class="echo"></small>
+                </div>
+                <div class="field">
+                  <label for="impuesto-fiscal">Tratamiento del impuesto</label>
+                  <select id="impuesto-fiscal" name="impuestoFiscal"></select>
+                </div>
+              </div>
+              <div class="row two">
+                <div class="field">
+                  <label for="iva">IVA u otro % sobre las comisiones <span class="unit">% de cada comisión</span></label>
+                  <div class="with-action"><input id="iva" name="ivaComisionesPct" type="text" inputmode="decimal" placeholder="No sé" aria-describedby="iva-echo"><button type="button" class="btn ghost small na" data-na="iva" aria-label="IVA sobre comisiones: no aplica">No aplica</button></div>
+                  <small id="iva-echo" class="echo"></small>
+                </div>
+                <div class="field">
+                  <label for="iva-fiscal">Tratamiento del IVA</label>
+                  <select id="iva-fiscal" name="ivaFiscal"></select>
+                </div>
+              </div>
+              <div class="row two">
+                <div class="field">
+                  <label for="transf">Costo de transferencia</label>
+                  <div class="with-action"><input id="transf" name="costoTransferencia" type="text" inputmode="decimal" placeholder="No sé" aria-describedby="transf-echo"><button type="button" class="btn ghost small na" data-na="transf" aria-label="Transferencia: no aplica">No aplica</button></div>
+                  <small id="transf-echo" class="echo"></small>
+                </div>
+                <div class="field">
+                  <label for="transf-cobro">Cómo se cobra</label>
+                  <select id="transf-cobro" name="transfCobro"></select>
+                </div>
+              </div>
+              <div class="field">
+                <label for="slippage">Slippage estimado en la venta <span class="unit">% de precio en contra</span></label>
+                <div class="with-action"><input id="slippage" name="slippageVentaPct" type="text" inputmode="decimal" placeholder="No sé" aria-describedby="slippage-echo"><button type="button" class="btn ghost small na" data-na="slippage" aria-label="Slippage: no aplica">No aplica</button></div>
+                <small id="slippage-echo" class="echo"></small>
+              </div>
+            </details>
+          </fieldset>
+        </form>
+
+        <div id="resultado" class="result" aria-live="polite" aria-labelledby="h-res">
+          <h3 id="h-res" class="sr-only">Resultado</h3>
+        </div>
+      </div>
+      </div>
+      <div id="panel-rutas" role="tabpanel" aria-labelledby="tab-rutas" data-desde="profesional" hidden>
+        <p class="hint panel-hint">Operaciones encadenadas: lo que recibís en un paso es lo que entregás en el siguiente. Cada paso tiene sus propios costos, límites y condiciones. Ningún activo se considera equivalente a otro.</p>
+        <div class="sim-grid">
+          <div id="ruta-editor" class="form ruta-editor"></div>
+          <div id="ruta-resultado" class="result" aria-live="polite"></div>
+        </div>
+      </div>
+      <details id="herramienta-bonos" class="politica herramienta" data-desde="profesional">
+        <summary>MEP y CCL con bonos (cálculo avanzado)</summary>
+        <div id="bonos-campos"></div>
+      </details>
+      <details id="herramienta-plataformas" class="politica herramienta" data-desde="profesional">
+        <summary>Mis plataformas: perfiles de costos</summary>
+        <div id="plataformas-campos"></div>
+      </details>
+    </section>
+
+    <section aria-labelledby="h-mat" class="block" id="oportunidades" data-desde="avanzado">
+      <div class="block-head">
+        <h2 id="h-mat">Matriz y explorador de escenarios</h2>
+        <div class="seg" role="group" aria-label="Vista de la matriz">
+          <button type="button" data-vista="bruta" aria-pressed="true">Brecha bruta</button>
+          <button type="button" data-vista="neta" aria-pressed="false">Resultado neto</button>
+          <button type="button" data-vista="ranking" aria-pressed="false" data-desde="profesional">Explorador</button>
+        </div>
+        <p class="hint" id="matriz-hint"></p>
+      </div>
+      <div id="vista-tabla" class="table-wrap">
+        <table id="matriz" class="matrix"></table>
+      </div>
+      <div id="vista-ranking" hidden>
+        <div class="rank-controls field">
+          <label for="criterio">Ordenar por</label>
+          <select id="criterio"></select>
+        </div>
+        <div id="ranking"></div>
+      </div>
+      <p class="hint leyenda" id="leyenda"></p>
+      <div id="faltan" class="faltan"></div>
+      <details id="costos-netos" class="politica" hidden>
+        <summary>Costos para el resultado neto</summary>
+        <div id="costos-campos" class="costos-campos"></div>
+      </details>
+    </section>
+
+    <section aria-labelledby="h-hist" class="block" id="historial">
+      <div class="block-head">
+        <h2 id="h-hist">Historial de simulaciones <span class="unit" id="hist-cuenta"></span></h2>
+        <p class="hint">Se guarda sólo en este navegador. Exportá un JSON para tener una copia o pasarlo a otra compu; el CSV es para abrirlo en Excel.</p>
+      </div>
+      <details id="capturas" class="politica" data-desde="profesional">
+        <summary>Capturas de cotizaciones y evolución histórica</summary>
+        <div id="capturas-campos"></div>
+      </details>
+      <div class="hist-tools" data-desde="avanzado">
+        <button type="button" class="btn small" data-h="exportar-json" id="hist-exportar-json">Exportar JSON</button>
+        <button type="button" class="btn small" data-h="exportar-csv" id="hist-exportar-csv">Exportar CSV</button>
+        <label class="btn ghost small file-btn">Importar JSON<input type="file" id="hist-importar" accept="application/json,.json"></label>
+      </div>
+      <p id="hist-msg" class="hint" role="status" aria-live="polite"></p>
+      <div id="hist-comparar" data-desde="avanzado"></div>
+      <ul id="hist-lista" class="hist-lista"></ul>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <!-- Versión celular: pestañas abajo (en la versión web no se muestran) -->
+  <nav id="pestanas" class="pestanas" aria-label="Secciones">
+    <button type="button" data-seccion="sec-simulacion"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M14 11h2M8 15h2M14 15h2"/></svg><span>Calcular</span></button>
+    <button type="button" data-seccion="sec-cotizaciones"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 4 7-8"/><path d="M15 8h5v5"/></svg><span>Cotizaciones</span></button>
+    <button type="button" data-seccion="oportunidades" data-desde="avanzado"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg><span>Mercados</span></button>
+    <button type="button" data-seccion="historial"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><span>Historial</span></button>
+  </nav>
+
+  <div id="barra-resultado" class="barra" hidden>
+    <p id="barra-texto" aria-live="off"></p>
+    <button type="button" class="btn small" id="barra-ver">Ver resultado</button>
+  </div>
+
+  <footer class="foot">
+    <p><strong>Alcance.</strong> Brecha es una simulación matemática. No determina si una operación está habilitada, si hay liquidez para el monto ni si corresponden restricciones cambiarias. Los dólares locales, los dólares cable y los activos cripto no son equivalentes y pueden requerir conversiones adicionales. Cotizaciones: <a href="https://dolarapi.com/docs/argentina/" rel="noopener" target="_blank">DolarAPI</a> (sin afiliación).</p>
+    <p><a id="otra-version" data-otra-version href="#" hidden></a></p>
+  </footer>
+</body>
+</html>

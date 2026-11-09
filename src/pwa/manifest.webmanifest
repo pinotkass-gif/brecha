@@ -1,0 +1,19 @@
+{
+  "name": "Brecha · simulador cambiario",
+  "short_name": "Brecha",
+  "description": "Simulador cambiario personal: oficial, blue, MEP, CCL y cripto. Sólo simulación.",
+  "lang": "es-AR",
+  "dir": "ltr",
+  "start_url": "../../",
+  "scope": "../../",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f7f9",
+  "theme_color": "#0f766e",
+  "icons": [
+    { "src": "icono-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icono-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icono-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icono.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
