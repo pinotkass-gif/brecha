@@ -1,8 +1,7 @@
-// Escena 3D de «Inicio»: el langostino mecánico sobre un escenario negro, chispas azules que suben, un fondo de ondas
+// Escena 3D de «Inicio»: una figura (opcional) sobre un escenario negro, chispas azules que suben, un fondo de ondas
 // metálicas que pasa del acero oscuro al azul eléctrico al bajar, y una cámara que da la vuelta completa con el scroll.
 // Estilo tomado del prompt que pasó el propietario (escena "Bronze and Time"), con colores y figura propios.
 import * as THREE from '../vendor/three.module.min.js';
-import { construirLangostino } from './langostino.mjs';
 
 const VERTEX = `
 varying vec2 vUv;
@@ -82,7 +81,7 @@ function entorno(renderer) {
  * @param {HTMLCanvasElement} canvas
  * @param {{liviano?: boolean}} [opts]  liviano: celular (menos chispas, sin sombras, menos resolución)
  */
-export function crearEscena(canvas, { liviano = false } = {}) {
+export function crearEscena(canvas, { liviano = false, figura = null } = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, liviano ? 1.5 : 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -138,19 +137,20 @@ export function crearEscena(canvas, { liviano = false } = {}) {
   const chispas = new THREE.Points(geo, new THREE.PointsMaterial({ size: liviano ? 0.035 : 0.025, vertexColors: true, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, map: texturaChispa() }));
   scene.add(chispas);
 
-  // El langostino: escalado a 3,5 de largo y centrado en su pivote (para girar sobre su centro)
+  // La figura (si hay): escalada a 3,5 y centrada en su pivote (para girar sobre su centro)
   const pivote = new THREE.Group();
   scene.add(pivote);
-  const langostino = construirLangostino(THREE, { liviano });
-  pivote.add(langostino.grupo);
-  langostino.grupo.updateMatrixWorld(true);
-  const caja = new THREE.Box3().setFromObject(langostino.grupo);
-  const tam = caja.getSize(new THREE.Vector3());
-  langostino.grupo.scale.setScalar(3.5 / Math.max(tam.x, tam.y, tam.z, 0.0001));
-  langostino.grupo.updateMatrixWorld(true);
-  const centro = new THREE.Box3().setFromObject(langostino.grupo).getCenter(new THREE.Vector3());
-  langostino.grupo.position.sub(centro);
-  pivote.position.y = -0.2;
+  const fig = figura ? figura(THREE, { liviano }) : null;
+  if (fig) {
+    pivote.add(fig.grupo);
+    fig.grupo.updateMatrixWorld(true);
+    const tam = new THREE.Box3().setFromObject(fig.grupo).getSize(new THREE.Vector3());
+    fig.grupo.scale.setScalar(3.5 / Math.max(tam.x, tam.y, tam.z, 0.0001));
+    fig.grupo.updateMatrixWorld(true);
+    const centro = new THREE.Box3().setFromObject(fig.grupo).getCenter(new THREE.Vector3());
+    fig.grupo.position.sub(centro);
+    pivote.position.y = -0.2;
+  }
 
   const mirar = new THREE.Vector3();
   const destino = new THREE.Vector3();
@@ -170,7 +170,7 @@ export function crearEscena(canvas, { liviano = false } = {}) {
   function dibujar({ progreso, mouseX, mouseY, dt, t, velocidad = 0, angosto = false }) {
     pivote.rotation.y = mouseX * 0.25;
     pivote.rotation.x = mouseY * 0.15;
-    langostino.animar(t);
+    fig?.animar?.(t);
     const p = chispas.geometry.attributes.position.array;
     const mult = 1 + velocidad * 9;
     const turb = velocidad * 0.8;
@@ -196,9 +196,9 @@ export function crearEscena(canvas, { liviano = false } = {}) {
     // Más lejos en pantallas angostas (celular parado) para que entre entero
     const radio = Math.max(4.4, 3.7 / Math.max(camera.aspect, 0.3)) - arco * 0.6;
     destino.set(radio * Math.sin(phi), 0.35 + arco * 0.8, radio * Math.cos(phi));
-    // Al principio el langostino queda corrido para dejar lugar a los textos (en pantallas angostas, más arriba)
+    // Al principio la figura queda corrida para dejar lugar a los textos (en pantallas angostas, más arriba)
     const e = (Math.cos(Math.min(1, progreso / 0.28) * Math.PI) + 1) * 0.5;
-    // En pantallas angostas el langostino queda siempre en la mitad de arriba (los textos van abajo)
+    // En pantallas angostas la figura queda siempre en la mitad de arriba (los textos van abajo)
     mirar.set(angosto ? 0 : -1.25 * e, angosto ? -0.15 - 0.42 * radio * Math.tan(Math.PI * 25 / 180) : -0.15, 0);
     if (primera) { camera.position.copy(destino); primera = false; } else camera.position.lerp(destino, 0.025);
     camera.lookAt(mirar);

@@ -1,4 +1,4 @@
-// «Inicio»: la presentación de Brecha (pedido 10/11/2026). Escena 3D con el langostino mecánico (src/inicio/escena.mjs,
+// «Inicio»: la presentación de Brecha (pedido 10/11/2026). Escena 3D con la figura de la presentación (src/inicio/escena.mjs,
 // se carga recién al mostrarla), cuatro partes que aparecen al bajar, rayitas de progreso, cursor de anillos (sólo compu)
 // y números en vivo. Se apaga al salir de la pestaña (no gasta batería). Sin WebGL: fondo azul y los textos.
 // Con «reducir movimiento»: una imagen quieta y las cuatro partes una debajo de la otra.
