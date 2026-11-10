@@ -1,4 +1,4 @@
-// «Inicio»: la presentación de Brecha (pedido 10/11/2026). Escena 3D con la figura de la presentación (src/inicio/escena.mjs,
+// «Inicio»: la presentación de Brecha (pedido 10/11/2026). Escena 3D con el símbolo del dólar cripto (src/inicio/escena.mjs + dolar.mjs,
 // se carga recién al mostrarla), cuatro partes que aparecen al bajar, rayitas de progreso, cursor de anillos (sólo compu)
 // y números en vivo. Se apaga al salir de la pestaña (no gasta batería). Sin WebGL: fondo azul y los textos.
 // Con «reducir movimiento»: una imagen quieta y las cuatro partes una debajo de la otra.
@@ -114,8 +114,8 @@ export function crearInicio({ root, plataforma, getResumen = () => [], alturaArr
     if (!hayWebGL()) { root.dataset.tres = 'no'; return null; }
     cargando = (async () => {
       try {
-        const { crearEscena } = await import('../inicio/escena.mjs');
-        escena = crearEscena(canvas, { liviano: plataforma === 'celular' || innerWidth < 860 });
+        const [{ crearEscena }, { construirDolar }] = await Promise.all([import('../inicio/escena.mjs'), import('../inicio/dolar.mjs')]);
+        escena = crearEscena(canvas, { liviano: plataforma === 'celular' || innerWidth < 860, figura: construirDolar });
         root.dataset.tres = 'si';
         medir();
       } catch (e) {

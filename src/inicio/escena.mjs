@@ -154,7 +154,6 @@ export function crearEscena(canvas, { liviano = false, figura = null } = {}) {
 
   const mirar = new THREE.Vector3();
   const destino = new THREE.Vector3();
-  let primera = true;
 
   function redimensionar(w, h) {
     renderer.setSize(w, h, false);
@@ -194,13 +193,14 @@ export function crearEscena(canvas, { liviano = false, figura = null } = {}) {
     const phi = progreso * Math.PI * 2;
     const arco = Math.sin(progreso * Math.PI);
     // Más lejos en pantallas angostas (celular parado) para que entre entero
-    const radio = Math.max(4.4, 3.7 / Math.max(camera.aspect, 0.3)) - arco * 0.6;
+    const radio = Math.max(4.6, 4.9 / Math.max(camera.aspect, 0.3)) - arco * 0.6;
     destino.set(radio * Math.sin(phi), 0.35 + arco * 0.8, radio * Math.cos(phi));
     // Al principio la figura queda corrida para dejar lugar a los textos (en pantallas angostas, más arriba)
     const e = (Math.cos(Math.min(1, progreso / 0.28) * Math.PI) + 1) * 0.5;
     // En pantallas angostas la figura queda siempre en la mitad de arriba (los textos van abajo)
-    mirar.set(angosto ? 0 : -1.25 * e, angosto ? -0.15 - 0.42 * radio * Math.tan(Math.PI * 25 / 180) : -0.15, 0);
-    if (primera) { camera.position.copy(destino); primera = false; } else camera.position.lerp(destino, 0.025);
+    mirar.set(angosto ? 0 : -1.25 * e, angosto ? -0.15 - 0.5 * radio * Math.tan(Math.PI * 25 / 180) : -0.15, 0);
+    // El progreso ya viene suavizado: la cámara va siempre sobre el círculo (nunca corta por el medio de la figura)
+    camera.position.copy(destino);
     camera.lookAt(mirar);
     uniforms.uTime.value = t;
     uniforms.uMouse.value.set(mouseX, -mouseY);
