@@ -6,6 +6,7 @@ import { responder, ayuda } from '../historico/analisis.mjs';
 import { crearFuenteHistorico } from '../historico/fuente.mjs';
 import { interpretarEscenario, calcularEscenario, MERCADOS_CALCULADORA } from '../chat/escenario.mjs';
 import { interpretarExchanges, responderExchanges } from '../chat/exchanges.mjs';
+import { interpretarGalicia, responderGalicia } from '../chat/bancos.mjs';
 import { formatNumberAR, parseNumberAR } from '../engine/format.mjs';
 import { esc } from './comun.mjs';
 
@@ -33,7 +34,7 @@ function restaurar(g) {
       puntos: Array.isArray(s?.puntos) ? s.puntos.filter((p) => p && /^\d{4}-\d{2}-\d{2}$/.test(p.fecha) && Number.isFinite(p.valor)).slice(0, 400) : [],
     })).filter((s) => s.puntos.length) : [];
     const a = r.accion;
-    const accion = a && a.tipo === 'calculadora' && a.compra in MERCADOS_CALCULADORA && a.venta in MERCADOS_CALCULADORA && ['ars', 'unidades'].includes(a.modo)
+    const accion = a && a.tipo === 'galicia' ? { tipo: 'galicia' } : a && a.tipo === 'calculadora' && a.compra in MERCADOS_CALCULADORA && a.venta in MERCADOS_CALCULADORA && ['ars', 'unidades'].includes(a.modo)
       ? { tipo: 'calculadora', compra: a.compra, venta: a.venta, modo: a.modo, monto: texto(a.monto, 40), base: texto(a.base, 40), precioVenta: texto(a.precioVenta, 40), conversionPct: texto(a.conversionPct, 40), sentido: ['cobran', 'sobreprecio', 'dan'].includes(a.sentido) ? a.sentido : 'cobran',
         ...(a.costos && typeof a.costos === 'object' ? { costos: costosGuardados(a.costos), ...(a.origen === 'exchanges' ? { origen: 'exchanges' } : {}) } : {}) } : null;
     return [{ rol: 'brecha', respuesta: { ok: r.ok === true, frases: textos(r.frases, 20, 1000), avisos: textos(r.avisos, 10, 500), tabla, series, unidad: r.unidad === '%' ? '%' : r.unidad === 'ARS' ? 'ARS' : '', fuente: texto(r.fuente, 300), accion, verExchanges: r.verExchanges === true } }];
@@ -92,7 +93,7 @@ function grafico(series, unidad) {
 function htmlRespuesta(r, i) {
   const frases = r.frases.map((f) => `<p>${esc(f)}</p>`).join('');
   const botones = [
-    r.accion ? `<button type="button" class="btn small" data-abrir-calculadora="${i}">Abrir en la calculadora</button>` : '',
+    r.accion ? `<button type="button" class="btn small" data-abrir-calculadora="${i}">${r.accion.tipo === 'galicia' ? 'Usarla en la calculadora' : 'Abrir en la calculadora'}</button>` : '',
     r.verExchanges ? '<button type="button" class="btn ghost small" data-ir-exchanges>Ver todo en «USDT en exchanges»</button>' : '',
   ].join('');
   const accion = botones ? `<div class="banner-actions">${botones}</div>` : '';
@@ -112,7 +113,7 @@ function ayudaEscenario(motivo) {
 /**
  * @param {{root: HTMLElement, storage: {get: Function, set: Function, trySet: Function}, ahora?: () => Date, fetch?: typeof fetch}} deps
  */
-export function crearChat({ root, storage, ahora = () => new Date(), fetch: f, precioDeHoy = () => null, onAbrirCalculadora = () => {}, exchanges = null, onIrAExchanges = () => {} }) {
+export function crearChat({ root, storage, ahora = () => new Date(), fetch: f, precioDeHoy = () => null, onAbrirCalculadora = () => {}, exchanges = null, onIrAExchanges = () => {}, bancos = null }) {
   const fuente = crearFuenteHistorico({ storage, ahora, fetch: f });
   let mensajes = restaurar(storage.get(KEY));
   let ocupado = false;
@@ -125,7 +126,7 @@ export function crearChat({ root, storage, ahora = () => new Date(), fetch: f, p
         <input id="chat-pregunta" type="text" maxlength="300" enterkeyhint="send" placeholder="Ej.: ¿cómo estuvo la brecha oficial cripto los últimos 3 meses?">
         <button type="submit" class="btn primary" id="chat-enviar">Preguntar</button>
       </form>
-      <p class="hint chat-pie">Responde con las cotizaciones de cierre de cada día (ArgentinaDatos), simula operaciones con el motor de la calculadora («consigo el oficial a 1535 y compro USDT al 2 %: ¿cómo salgo si vendo?») y contesta sobre USDT en los exchanges con los precios de CriptoYa («¿dónde está más barato el USDT?», «compro en Belo y vendo en Binance P2P»). No es una inteligencia artificial: entiende preguntas sobre oficial, blue, MEP, CCL, cripto, mayorista y tarjeta. <button type="button" class="btn ghost small" data-chat="borrar">Borrar la conversación</button></p>
+      <p class="hint chat-pie">Responde con las cotizaciones de cierre de cada día (ArgentinaDatos), simula operaciones con el motor de la calculadora («consigo el oficial a 1535 y compro USDT al 2 %: ¿cómo salgo si vendo?») , contesta sobre USDT en los exchanges con los precios de CriptoYa («¿dónde está más barato el USDT?», «compro en Belo y vendo en Binance P2P») y carga la cotización de Galicia («galicia 1535»). No es una inteligencia artificial: entiende preguntas sobre oficial, blue, MEP, CCL, cripto, mayorista y tarjeta. <button type="button" class="btn ghost small" data-chat="borrar">Borrar la conversación</button></p>
     </div>`;
   const log = root.querySelector('.chat-log');
   const input = root.querySelector('#chat-pregunta');
@@ -150,6 +151,17 @@ export function crearChat({ root, storage, ahora = () => new Date(), fetch: f, p
     if (!pregunta || ocupado) return;
     ocupado = true;
     mensajes.push({ rol: 'yo', texto: pregunta });
+    // ¿Cargar o consultar Galicia ("galicia 1535", "galicia compra 1485 venta 1535", "¿a cuánto está galicia?")?
+    const gal = bancos ? interpretarGalicia(pregunta) : null;
+    if (gal) {
+      let r;
+      try { r = responderGalicia(gal, bancos); } catch { r = { ok: false, frases: ['No pude guardar la cotización de Galicia: probá desde la tarjeta en Cotizaciones.'] }; }
+      mensajes.push({ rol: 'brecha', respuesta: { avisos: [], series: [], tabla: null, unidad: '', fuente: '', ...r } });
+      ocupado = false;
+      guardar();
+      render({ bajar: true });
+      return;
+    }
     // ¿USDT en los exchanges ("¿dónde está más barato el USDT?", "compro en Belo y vendo en Binance P2P")?
     const ex = exchanges ? interpretarExchanges(pregunta) : null;
     if (ex) {

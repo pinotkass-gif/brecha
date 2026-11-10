@@ -1233,6 +1233,15 @@ function usarOpcion(x) {
     : `Usé el precio de ${x.nombre}: $ ${formatNumberAR(x.precio, { decimals: 4, minDecimals: 2 })}.`;
   avisar(`${que}${comision}`);
 }
+/** Desde el chat («galicia 1535» → «Usarla en la calculadora»): comprás el oficial a la venta de Galicia. */
+function usarGaliciaEnCalculadora() {
+  const f = bancos?.datosOpciones().filas.find((x) => x.id === 'galicia');
+  if (!f || !f.usarCompra) { avisar('Galicia no está cargada o se aleja mucho del oficial: revisala en Cotizaciones.'); return; }
+  if ($('#mercado-compra').value !== 'oficial') { $('#mercado-compra').value = 'oficial'; cambiarMercado(); }
+  cambiarModo('simple');
+  usarOpcion({ clave: 'base', fuente: 'bancos', lado: 'compra', fiat: 'ARS', id: 'galicia', nombre: f.nombre, precio: f.compra, at: f.fecha, manual: f.origen === 'manual', conComisiones: false });
+  irASimulacion();
+}
 function cargarRetiro({ valor, cobro }) {
   if (!Object.hasOwn(COBROS_FIJOS, cobro) || typeof valor !== 'string' || valor.length > 40) return;
   $('#transf-cobro').value = cobro;
@@ -1477,7 +1486,8 @@ function init() {
   crearChat({
     root: $('#chat'), storage,
     precioDeHoy: (id, punta) => { const v = precioMercado(id, punta); return v ? { valor: v, texto: textoFuente(id, punta, false) } : null; },
-    onAbrirCalculadora: abrirEscenarioEnCalculadora,
+    onAbrirCalculadora: (a) => (a?.tipo === 'galicia' ? usarGaliciaEnCalculadora() : abrirEscenarioEnCalculadora(a)),
+    bancos: { guardarManual: (id, v) => bancos.guardarManual(id, v), fila: (id) => bancos.fila(id), referencia: () => bancos.referencia() },
     exchanges: { datos: () => exchanges?.datos() ?? Promise.resolve(null), preferencias: () => exchanges?.preferencias() ?? {} },
     onIrAExchanges: () => { mostrarSeccion('sec-exchanges'); $('#h-exch').scrollIntoView({ behavior: PLATAFORMA === 'celular' ? 'auto' : 'smooth', block: 'start' }); },
   });

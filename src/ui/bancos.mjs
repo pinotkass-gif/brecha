@@ -70,7 +70,7 @@ export function crearBancos({ root, storage, fetch: f, ahora = () => new Date(),
     pendiente = false;
     const lista = filas();
     root.innerHTML = `<div class="bancos-head"><h3>Dólar oficial en bancos</h3>
-        <p class="hint">Compra = lo que te paga el banco por cada dólar; venta = lo que pagás. Nación viene de CriptoYa. Galicia y Macro no se pueden traer al día (CriptoYa tiene su último dato del 19/12/2025 y los bancos no lo publican de forma que la app lo pueda leer): Galicia la cargás vos.</p></div>
+        <p class="hint">Compra = lo que te paga el banco por cada dólar; venta = lo que pagás. Nación viene de CriptoYa. Galicia y Macro no se pueden traer al día (CriptoYa tiene su último dato del 19/12/2025; Galicia sólo la muestra en el homebanking y su app): Galicia la cargás vos, acá o en el chat («galicia 1535»).</p></div>
       <div class="cards bancos-cards">${lista.map(tarjeta).join('')}</div>
       <p class="hint" id="bancos-estado" role="status">${esc([error, api?.aviso ?? '', nota].filter(Boolean).join(' '))}</p>`;
   }
@@ -110,12 +110,16 @@ export function crearBancos({ root, storage, fetch: f, ahora = () => new Date(),
       return;
     }
     errorManual = '';
+    guardar(id, v);
+    avisar(`Guardé la cotización de ${BANCOS[id]}: venta $ ${formatNumberAR(v.venta, { decimals: 2, minDecimals: 2 })}${v.compra ? `, compra $ ${formatNumberAR(v.compra, { decimals: 2, minDecimals: 2 })}` : ''}. En la calculadora aparece cuando comprás o vendés el dólar oficial.`);
+  });
+  /** Guarda lo ya validado (tarjeta o chat) con la hora de ahora. */
+  function guardar(id, v) {
     manual = { ...manual, [id]: { compra: v.compra, venta: v.venta, at: ahora().toISOString() } };
     storage.set(KEY_MANUAL, manual);
     render({ forzar: true });
     avisarCambio();
-    avisar(`Guardé la cotización de ${BANCOS[id]}: venta $ ${formatNumberAR(v.venta, { decimals: 2, minDecimals: 2 })}${v.compra ? `, compra $ ${formatNumberAR(v.compra, { decimals: 2, minDecimals: 2 })}` : ''}. En la calculadora aparece cuando comprás o vendés el dólar oficial.`);
-  });
+  }
   root.addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-banco-borrar]');
     if (!b || !MANUALES.includes(b.dataset.bancoBorrar)) return;
@@ -136,6 +140,21 @@ export function crearBancos({ root, storage, fetch: f, ahora = () => new Date(),
     datosOpciones: () => ({ at: api?.at ?? null, filas: comoOpciones(filas()), cargando: estado === 'cargando' && !api }),
     estado: () => ({ estado, error, nota }),
     alCambiar: (fn) => { oyentes.push(fn); },
+    /**
+     * Carga a mano desde afuera de la tarjeta (el chat: «galicia 1535»). Se valida igual que en la tarjeta.
+     * @returns {{ok: true, fila: object} | {ok: false, error: string}}
+     */
+    guardarManual(id, valores) {
+      if (!MANUALES.includes(id)) return { ok: false, error: `${BANCOS[id] ?? id} no se carga a mano.` };
+      const v = validarManual(valores ?? {});
+      if (!v.ok) return v;
+      errorManual = '';
+      guardar(id, v);
+      return { ok: true, fila: filas().find((x) => x.id === id) };
+    },
+    /** Cómo está cada banco ahora (lo mismo que muestran las tarjetas). */
+    fila: (id) => filas().find((x) => x.id === id) ?? null,
+    referencia: () => referencia(),
     /** Lleva el foco a cargar Galicia a mano. */
     enfocarManual: () => { const el = root.querySelector('#galicia-venta'); el?.scrollIntoView({ block: 'center' }); el?.focus(); },
   };
