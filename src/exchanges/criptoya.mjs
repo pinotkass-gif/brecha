@@ -140,7 +140,8 @@ export function crearFuenteExchanges({ fetch: f = globalThis.fetch?.bind(globalT
       if (!v.ok) throw new Error(v.error);
       return v;
     } catch (e) {
-      throw new Error(e?.name === 'AbortError' ? 'CriptoYa no respondió' : e?.message || 'sin conexión');
+      // fetch rechaza con TypeError ("Failed to fetch") sin conexión o si CriptoYa corta por muchas consultas seguidas
+      throw new Error(e?.name === 'AbortError' ? 'CriptoYa no respondió' : e instanceof TypeError ? 'sin conexión o CriptoYa cortó por demasiadas consultas seguidas' : e?.message || 'sin conexión');
     } finally {
       if (timer) clearTimeout(timer);
     }

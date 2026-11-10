@@ -162,7 +162,7 @@ export function crearFuenteBancos({ fetch: f = globalThis.fetch?.bind(globalThis
       storage.trySet(KEY_COPIA, { at, json: Object.fromEntries(v.filas.map((x) => [x.id, { ask: num(x.ask), totalAsk: num(x.totalAsk), bid: num(x.bid), totalBid: num(x.totalBid), time: x.time }])) });
       return { ok: true, ...mem, origen: 'red' };
     } catch (e) {
-      const msg = e?.name === 'AbortError' ? 'CriptoYa no respondió' : e?.message || 'sin conexión';
+      const msg = e?.name === 'AbortError' ? 'CriptoYa no respondió' : e instanceof TypeError ? 'sin conexión o CriptoYa cortó por demasiadas consultas seguidas' : e?.message || 'sin conexión';
       if (mem) return { ok: true, ...mem, origen: 'copia', aviso: `No pude actualizar los bancos (${msg}): muestro lo guardado.` };
       return { ok: false, error: `No pude traer las cotizaciones de los bancos (${msg}).` };
     } finally {
