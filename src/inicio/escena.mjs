@@ -31,15 +31,15 @@ void main() {
   float w3 = sin(dot(w, vec2(cos(1.2), sin(1.2))) * 4.0 + time * 1.8 + w2 * 0.5);
   float field = w1 * 0.5 + w2 * 0.35 + w3 * 0.15;
   float crest = pow(max(0.0, 1.0 - abs(field - 0.1)), 2.5) * 0.5 + pow(max(0.0, 1.0 - abs(field - 0.15)), 8.0) * 0.9;
-  // Arriba: acero oscuro / grafito. Abajo: azul eléctrico profundo
-  vec3 s0 = vec3(0.0008, 0.0009, 0.0012), a0 = vec3(0.030, 0.036, 0.048), b0 = vec3(0.016, 0.019, 0.028), c0 = vec3(0.26, 0.30, 0.38);
-  vec3 s1 = vec3(0.0003, 0.0006, 0.0016), a1 = vec3(0.010, 0.038, 0.092), b1 = vec3(0.005, 0.020, 0.058), c1 = vec3(0.10, 0.40, 0.85);
+  // Crema y blanco hueso (como el resto de la app); al bajar, apenas más cálido
+  vec3 s0 = vec3(0.925, 0.905, 0.872), a0 = vec3(0.985, 0.976, 0.958), b0 = vec3(0.958, 0.944, 0.916), c0 = vec3(0.012, 0.011, 0.009);
+  vec3 s1 = vec3(0.930, 0.890, 0.850), a1 = vec3(0.990, 0.968, 0.944), b1 = vec3(0.962, 0.932, 0.900), c1 = vec3(0.016, 0.012, 0.009);
   float t = smoothstep(0.0, 1.0, scroll);
   vec3 col = mix(s0, s1, t);
   col = mix(col, mix(b0, b1, t), smoothstep(-0.6, 0.2, field));
   col = mix(col, mix(a0, a1, t), smoothstep(0.0, 0.8, field));
   col += mix(c0, c1, t) * crest * 1.4;
-  col *= 1.0 - dot(uv, uv) * 0.12;
+  col *= 1.0 - dot(uv, uv) * 0.05;
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -61,7 +61,7 @@ function texturaChispa() {
 function entorno(renderer) {
   const pm = new THREE.PMREMGenerator(renderer);
   const sala = new THREE.Scene();
-  sala.add(new THREE.Mesh(new THREE.BoxGeometry(12, 12, 12), new THREE.MeshBasicMaterial({ color: 0x030405, side: THREE.BackSide })));
+  sala.add(new THREE.Mesh(new THREE.BoxGeometry(12, 12, 12), new THREE.MeshBasicMaterial({ color: 0x8a8278, side: THREE.BackSide })));
   const panel = (w, h, rgb, pos) => {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(...rgb), side: THREE.DoubleSide }));
     m.position.set(...pos);
@@ -85,13 +85,13 @@ export function crearEscena(canvas, { liviano = false, figura = null } = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, liviano ? 1.5 : 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.9;
+  renderer.toneMappingExposure = 1.15;
   renderer.shadowMap.enabled = !liviano;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#000000');
-  scene.fog = new THREE.FogExp2('#000000', 0.01);
+  scene.background = new THREE.Color('#f8f5ef');
+  scene.fog = new THREE.FogExp2('#f8f5ef', 0.01);
   scene.environment = entorno(renderer);
 
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
@@ -114,27 +114,27 @@ export function crearEscena(canvas, { liviano = false, figura = null } = {}) {
   clave.shadow.camera.far = 15;
   clave.shadow.bias = -0.001;
   scene.add(clave);
-  const contra = new THREE.DirectionalLight('#6fb6ff', 9);
+  const contra = new THREE.DirectionalLight('#ffd2b8', 5);
   contra.position.set(-5, 3, -4);
   scene.add(contra);
-  const relleno = new THREE.DirectionalLight('#dfe8ff', 0.7);
+  const relleno = new THREE.DirectionalLight('#fff4e6', 0.9);
   relleno.position.set(-2, -4, 2);
   scene.add(relleno);
 
-  // Chispas: 70 % azules (como los ojos), 30 % blancas
+  // Chispas: terracota y gris cálido (sobre crema se ven con mezcla normal, no aditiva)
   const cantidad = liviano ? 160 : 450;
   const pos = new Float32Array(cantidad * 3);
   const col = new Float32Array(cantidad * 3);
   const datos = [];
   for (let i = 0; i < cantidad; i++) {
     pos.set([(Math.random() - 0.5) * 6.5, (Math.random() - 0.5) * 5 - 0.5, (Math.random() - 0.5) * 6.5], i * 3);
-    col.set(Math.random() < 0.7 ? [0.3 + Math.random() * 0.2, 0.68 + Math.random() * 0.15, 1] : [0.86, 0.93, 1], i * 3);
+    col.set(Math.random() < 0.6 ? [0.69, 0.34 + Math.random() * 0.06, 0.23] : [0.55, 0.5, 0.45], i * 3);
     datos.push({ vx: (Math.random() - 0.5) * 0.4, vy: 0.15 + Math.random() * 0.3, vz: (Math.random() - 0.5) * 0.4, vel: 0.5 + Math.random() * 1.5, radio: 0.05 + Math.random() * 0.15, fase: Math.random() * Math.PI * 2 });
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  const chispas = new THREE.Points(geo, new THREE.PointsMaterial({ size: liviano ? 0.035 : 0.025, vertexColors: true, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, map: texturaChispa() }));
+  const chispas = new THREE.Points(geo, new THREE.PointsMaterial({ size: liviano ? 0.035 : 0.025, vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false, map: texturaChispa() }));
   scene.add(chispas);
 
   // La figura (si hay): escalada a 3,5 y centrada en su pivote (para girar sobre su centro)

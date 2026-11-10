@@ -16,11 +16,11 @@ export function construirDolar(THREE, { liviano = false } = {}) {
   const cuerpo = new THREE.Group(); // lo que se mueve
   grupo.add(cuerpo);
   const mat = {
-    metal: new THREE.MeshStandardMaterial({ color: 0x0b0d11, metalness: 1, roughness: 0.16 }),
-    satinado: new THREE.MeshStandardMaterial({ color: 0x1a2029, metalness: 1, roughness: 0.32 }),
-    led: new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 0.85, 2.6), toneMapped: false }),
-    cara: new THREE.MeshStandardMaterial({ color: 0x141a24, metalness: 0.9, roughness: 0.22 }),
-    canto: new THREE.MeshStandardMaterial({ color: 0xc9d6ea, metalness: 1, roughness: 0.12 }),
+    metal: new THREE.MeshStandardMaterial({ color: 0x2b2825, metalness: 0.7, roughness: 0.25 }),
+    satinado: new THREE.MeshStandardMaterial({ color: 0xefe8dc, metalness: 0.2, roughness: 0.5 }),
+    led: new THREE.MeshBasicMaterial({ color: new THREE.Color(0.69, 0.34, 0.23), toneMapped: false }), // terracota
+    cara: new THREE.MeshStandardMaterial({ color: 0x2b2825, metalness: 0.6, roughness: 0.3 }),
+    canto: new THREE.MeshStandardMaterial({ color: 0xe8dccb, metalness: 1, roughness: 0.15 }),
   };
   const sombra = (m) => { m.castShadow = true; m.receiveShadow = true; return m; };
 
@@ -56,18 +56,18 @@ export function construirDolar(THREE, { liviano = false } = {}) {
     c.width = c.height = 128;
     const x = c.getContext('2d');
     const gr = x.createRadialGradient(64, 64, 0, 64, 64, 64);
-    gr.addColorStop(0, 'rgba(80, 170, 255, 0.55)');
-    gr.addColorStop(0.45, 'rgba(40, 120, 255, 0.18)');
+    gr.addColorStop(0, 'rgba(176, 87, 58, 0.22)');
+    gr.addColorStop(0.45, 'rgba(176, 87, 58, 0.08)');
     gr.addColorStop(1, 'rgba(0, 0, 0, 0)');
     x.fillStyle = gr;
     x.fillRect(0, 0, 128, 128);
     return new THREE.CanvasTexture(c);
   })();
-  const brillo = new THREE.Sprite(new THREE.SpriteMaterial({ map: halo, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  const brillo = new THREE.Sprite(new THREE.SpriteMaterial({ map: halo, transparent: true, depthWrite: false }));
   brillo.scale.set(2.6, 3.0, 1);
   brillo.position.z = -0.35;
   cuerpo.add(brillo);
-  const luz = new THREE.PointLight(0x3aa0ff, 3, 3, 1.6);
+  const luz = new THREE.PointLight(0xffb08a, 2, 3, 1.6);
   luz.position.set(0, 0, -0.5);
   cuerpo.add(luz);
 
@@ -92,7 +92,7 @@ export function construirDolar(THREE, { liviano = false } = {}) {
   cuerpo.add(orbita);
   const nBloques = liviano ? 6 : 8;
   const radioOrb = 1.9;
-  const bordes = new THREE.LineBasicMaterial({ color: 0x6cc4ff, transparent: true, opacity: 0.9 });
+  const bordes = new THREE.LineBasicMaterial({ color: 0xb0573a, transparent: true, opacity: 0.9 });
   const puntos = [];
   for (let i = 0; i < nBloques; i++) {
     const a = (i / nBloques) * Math.PI * 2;
@@ -104,7 +104,7 @@ export function construirDolar(THREE, { liviano = false } = {}) {
     orbita.add(b);
     puntos.push(b.position.clone());
   }
-  const cadena = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(puntos), new THREE.LineBasicMaterial({ color: 0x3aa0ff, transparent: true, opacity: 0.4 }));
+  const cadena = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(puntos), new THREE.LineBasicMaterial({ color: 0xb0573a, transparent: true, opacity: 0.35 }));
   orbita.add(cadena);
 
   function animar(t) {
@@ -114,7 +114,7 @@ export function construirDolar(THREE, { liviano = false } = {}) {
     for (const b of orbita.children) if (b.isMesh) { b.rotation.x += 0.004; b.rotation.y += 0.006; }
     const p = 0.82 + Math.sin(t * 2.1) * 0.18;
     brillo.material.opacity = 0.75 + Math.sin(t * 2.1) * 0.2;
-    luz.intensity = 3 * p;
+    luz.intensity = 2 * p;
     aro.rotation.z = t * 0.05;
   }
 
