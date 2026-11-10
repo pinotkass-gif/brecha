@@ -1,13 +1,16 @@
 // Símbolo del dólar cripto para «Inicio» (pedido del propietario 10/11/2026: "un símbolo de billete USD cripto, más
-// fácil en 3D", en lugar del langostino). Una "S" de metal negro brillante con bisel y la barra del "$" como una luz
-// LED azul que la atraviesa, un aro de moneda/token con línea LED y bloques de cadena que orbitan unidos por luz.
-// Todo armado con piezas de Three.js (sin modelos ni tipografías externas).
+// fácil en 3D", en lugar del langostino). El "$" con el contorno real de una tipografía (no dibujado a mano), en metal
+// negro pulido con bisel y contraluz LED azul, un aro de moneda/token con línea LED y bloques de cadena orbitando.
 
 /**
  * @param {typeof import('../vendor/three.module.min.js')} THREE
  * @param {{liviano?: boolean}} [opts]
  * @returns {{grupo: object, animar: (t: number) => void}}
  */
+// Contorno del "$" de Helvetiker Bold (MgOpen, © 2004 MAGENTA Ltd., uso y redistribución permitidos con el aviso:
+// src/vendor/helvetiker.LICENSE). Comandos m/l/q como en los typeface.json de Three.js, en milésimas.
+const GLIFO = 'm 682 693 l 495 693 q 468 782 491 749 q 391 831 441 824 l 391 579 q 633 462 562 534 q 704 259 704 389 q 616 57 704 136 q 391 -22 528 -22 l 391 -156 l 308 -156 l 308 -22 q 76 69 152 -7 q 0 300 0 147 l 183 300 q 215 191 190 230 q 308 128 245 143 l 308 414 q 84 505 157 432 q 12 700 12 578 q 89 902 12 824 q 308 981 166 981 l 308 1069 l 391 1069 l 391 981 q 595 905 521 981 q 682 693 670 829 m 308 599 l 308 831 q 228 796 256 831 q 200 712 200 762 q 225 642 200 668 q 308 599 251 617 m 391 128 q 476 174 449 140 q 504 258 504 207 q 391 388 504 354 l 391 128';
+
 export function construirDolar(THREE, { liviano = false } = {}) {
   const grupo = new THREE.Group(); // la escena lo escala y lo centra
   const cuerpo = new THREE.Group(); // lo que se mueve
@@ -16,67 +19,56 @@ export function construirDolar(THREE, { liviano = false } = {}) {
     metal: new THREE.MeshStandardMaterial({ color: 0x0b0d11, metalness: 1, roughness: 0.16 }),
     satinado: new THREE.MeshStandardMaterial({ color: 0x1a2029, metalness: 1, roughness: 0.32 }),
     led: new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 0.85, 2.6), toneMapped: false }),
+    cara: new THREE.MeshStandardMaterial({ color: 0x141a24, metalness: 0.9, roughness: 0.22 }),
+    canto: new THREE.MeshStandardMaterial({ color: 0xc9d6ea, metalness: 1, roughness: 0.12 }),
   };
   const sombra = (m) => { m.castShadow = true; m.receiveShadow = true; return m; };
 
-  // ---------- La "S": trazo de ancho parejo alrededor de dos arcos (simetría de media vuelta) ----------
-  const R = 0.45; // radio de cada panza
-  const W = 0.105; // medio ancho del trazo
-  const pasos = liviano ? 70 : 140;
-  const centro = [];
-  const arco = (cx, cy, a0, a1, n) => { for (let i = 0; i <= n; i++) { const a = a0 + ((a1 - a0) * i) / n; centro.push(new THREE.Vector2(cx + R * Math.cos(a), cy + R * Math.sin(a))); } };
-  const g = Math.PI / 180;
-  arco(0, R, 32 * g, 270 * g, pasos / 2); // panza de arriba: de arriba a la derecha, por la izquierda, hasta el medio
-  centro.pop(); // el punto del medio no se repite
-  arco(0, -R, 90 * g, -148 * g, pasos / 2); // panza de abajo: del medio, por la derecha, hasta abajo a la izquierda
-  const izq = [];
-  const der = [];
-  centro.forEach((p, i) => {
-    const a = centro[Math.max(0, i - 1)];
-    const b = centro[Math.min(centro.length - 1, i + 1)];
-    const t = new THREE.Vector2().subVectors(b, a).normalize();
-    const n = new THREE.Vector2(-t.y, t.x).multiplyScalar(W);
-    izq.push(p.clone().add(n));
-    der.push(p.clone().sub(n));
-  });
-  const forma = new THREE.Shape([...izq, ...der.reverse()]);
-  const ese = sombra(new THREE.Mesh(new THREE.ExtrudeGeometry(forma, {
-    depth: 0.22, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.04, bevelSegments: liviano ? 3 : 6, curveSegments: 12, steps: 1,
-  }), mat.metal));
-  ese.geometry.center();
-  cuerpo.add(ese);
-
-  // ---------- La barra del "$": una luz LED que atraviesa la S (con tapas de metal y halo en las puntas) ----------
-  const barra = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 2.35, liviano ? 12 : 24), mat.led);
-  cuerpo.add(barra);
+  // ---------- El "$": el contorno real de la letra (Helvetiker Bold), extruido con bisel en metal negro pulido ----------
+  const forma = new THREE.ShapePath();
+  const o = GLIFO.split(' ');
+  const k = 1 / 1000; // unidades de la tipografía → escena
+  for (let i = 0; i < o.length;) {
+    const c = o[i++];
+    const n = () => Number(o[i++]) * k;
+    if (c === 'm') forma.moveTo(n(), n());
+    else if (c === 'l') forma.lineTo(n(), n());
+    else if (c === 'q') { const x = n(), y = n(), cx = n(), cy = n(); forma.quadraticCurveTo(cx, cy, x, y); }
+    else if (c === 'b') { const x = n(), y = n(), c1x = n(), c1y = n(), c2x = n(), c2y = n(); forma.bezierCurveTo(c1x, c1y, c2x, c2y, x, y); }
+  }
+  const formas = forma.toShapes();
+  const curvas = liviano ? 10 : 24;
+  const signo = new THREE.Mesh(new THREE.ExtrudeGeometry(formas, {
+    depth: 0.16, curveSegments: curvas, bevelEnabled: true, bevelThickness: 0.035, bevelSize: 0.018, bevelSegments: liviano ? 4 : 8,
+  }), [mat.cara, mat.canto]); // cara grafito pulido, cantos y bisel de cromo: se lee nítido sobre el fondo oscuro
+  signo.geometry.center();
+  signo.scale.setScalar(1.75);
+  sombra(signo);
+  cuerpo.add(signo);
+  // Contraluz LED: la misma letra, plana y un poco más grande, atrás (se ve como un borde de neón azul)
+  const neon = new THREE.Mesh(new THREE.ShapeGeometry(formas, curvas), mat.led);
+  neon.geometry.center();
+  neon.scale.setScalar(1.75 * 1.07);
+  neon.position.z = -0.16;
+  cuerpo.add(neon);
   const halo = (() => {
     const c = document.createElement('canvas');
-    c.width = c.height = 64;
+    c.width = c.height = 128;
     const x = c.getContext('2d');
-    const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
-    gr.addColorStop(0, 'rgba(170, 225, 255, 1)');
-    gr.addColorStop(0.3, 'rgba(60, 160, 255, 0.6)');
+    const gr = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gr.addColorStop(0, 'rgba(80, 170, 255, 0.55)');
+    gr.addColorStop(0.45, 'rgba(40, 120, 255, 0.18)');
     gr.addColorStop(1, 'rgba(0, 0, 0, 0)');
     x.fillStyle = gr;
-    x.fillRect(0, 0, 64, 64);
+    x.fillRect(0, 0, 128, 128);
     return new THREE.CanvasTexture(c);
   })();
-  const halos = [];
-  for (const y of [-1.175, 1.175]) {
-    const tapa = sombra(new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.09, liviano ? 12 : 24), mat.satinado));
-    tapa.position.y = y + Math.sign(y) * 0.04;
-    cuerpo.add(tapa);
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: halo, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-    s.position.y = y;
-    s.scale.setScalar(0.5);
-    cuerpo.add(s);
-    halos.push(s);
-  }
-  const brillo = new THREE.Sprite(new THREE.SpriteMaterial({ map: halo, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }));
-  brillo.scale.set(0.7, 2.6, 1);
+  const brillo = new THREE.Sprite(new THREE.SpriteMaterial({ map: halo, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  brillo.scale.set(2.6, 3.0, 1);
+  brillo.position.z = -0.35;
   cuerpo.add(brillo);
-  const luz = new THREE.PointLight(0x3aa0ff, 4, 3, 1.6);
-  luz.position.set(0, 0, 0.35);
+  const luz = new THREE.PointLight(0x3aa0ff, 3, 3, 1.6);
+  luz.position.set(0, 0, -0.5);
   cuerpo.add(luz);
 
   // ---------- Aro de moneda/token con línea LED ----------
@@ -99,7 +91,7 @@ export function construirDolar(THREE, { liviano = false } = {}) {
   orbita.rotation.set(1.15, 0.2, -0.35);
   cuerpo.add(orbita);
   const nBloques = liviano ? 6 : 8;
-  const radioOrb = 1.72;
+  const radioOrb = 1.9;
   const bordes = new THREE.LineBasicMaterial({ color: 0x6cc4ff, transparent: true, opacity: 0.9 });
   const puntos = [];
   for (let i = 0; i < nBloques; i++) {
@@ -121,9 +113,8 @@ export function construirDolar(THREE, { liviano = false } = {}) {
     orbita.rotation.z = -0.35 + t * 0.18; // los bloques giran
     for (const b of orbita.children) if (b.isMesh) { b.rotation.x += 0.004; b.rotation.y += 0.006; }
     const p = 0.82 + Math.sin(t * 2.1) * 0.18;
-    for (const h of halos) h.material.opacity = p;
-    brillo.material.opacity = 0.25 + Math.sin(t * 2.1) * 0.08;
-    luz.intensity = 4 * p;
+    brillo.material.opacity = 0.75 + Math.sin(t * 2.1) * 0.2;
+    luz.intensity = 3 * p;
     aro.rotation.z = t * 0.05;
   }
 
