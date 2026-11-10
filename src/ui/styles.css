@@ -536,3 +536,26 @@ html[data-plataforma="celular"] .foot { padding-inline: max(16px, env(safe-area-
 .with-action.conversion select { flex: 0 0 auto; width: auto; }
 .with-action.conversion input { flex: 1 1 90px; min-width: 0; }
 #relacion-probar { align-self: flex-start; }
+
+/* ---------- Chat del histórico ---------- */
+.chat { display: flex; flex-direction: column; gap: 10px; max-width: 760px; }
+.chat-log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.chat-msg { border-radius: 12px; padding: 10px 14px; font-size: 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.chat-msg.yo { align-self: flex-end; max-width: 85%; background: var(--accent); color: var(--accent-ink); border-bottom-right-radius: 4px; }
+.chat-msg.brecha { align-self: stretch; background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+.chat-msg.no-entendi { border-left: 4px solid var(--warn); }
+.chat-msg.pendiente { color: var(--muted); font-style: italic; }
+.chat-msg.vacio { color: var(--muted); }
+.chat-avisos { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+.chat-fuente { font-size: 12px; color: var(--muted); }
+.chat-tabla summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--accent); }
+.chat-grafico .serie { fill: none; stroke-width: 2; }
+.chat-grafico .s-0 { stroke: var(--accent); } .chat-grafico .s-1 { stroke: #d97706; } .chat-grafico .s-2 { stroke: #7c3aed; }
+.chat-grafico .s-3 { stroke: #dc2626; } .chat-grafico .s-4 { stroke: #2563eb; } .chat-grafico .s-5 { stroke: #059669; } .chat-grafico .s-6 { stroke: var(--muted); }
+.chat-sugerencias { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-sugerencias .btn { text-align: left; }
+.chat-form { display: flex; gap: 8px; align-items: center; }
+.chat-form input { flex: 1 1 auto; }
+.chat-form .btn { flex: none; }
+.chat-pie { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+html[data-plataforma="celular"] body[data-seccion="sec-preguntar"] #sec-preguntar { display: block; }

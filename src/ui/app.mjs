@@ -19,6 +19,7 @@ import { crearAnalisis } from './analisis.mjs';
 import { crearBonos } from './bonos.mjs';
 import { crearPlataformas } from './plataformas.mjs';
 import { crearCapturas } from './capturas.mjs';
+import { crearChat } from './chat.mjs';
 import { resumenDeSimple, resumenDeRuta, trazaDeSimple } from '../historial/modelo.mjs';
 import { simularRuta } from '../engine/route.mjs';
 import { rutaDesdeSimple } from '../routes/desde-simple.mjs';
@@ -48,7 +49,7 @@ const rangoNivel = (n) => NIVELES_USO.indexOf(n);
 /** Versión: 'celular' (pestañas abajo, compacta) o 'web' (compu). La define index.html (scripts/variantes.mjs). */
 const PLATAFORMA = document.documentElement.dataset.plataforma === 'celular' ? 'celular' : 'web';
 const KEY_SECCION = 'brecha.seccion.v1';
-const SECCIONES = ['sec-simulacion', 'sec-cotizaciones', 'oportunidades', 'historial'];
+const SECCIONES = ['sec-simulacion', 'sec-cotizaciones', 'sec-preguntar', 'oportunidades', 'historial'];
 let nivelUso = 'profesional';
 const INVALIDO = '__invalido__';
 const PROVEEDOR = proveedorPorDefecto;
@@ -1328,6 +1329,7 @@ function init() {
     getSimulaciones: () => historial.registros(), evolucion: evolucionSimple,
   });
   analisis.enlazar($('#resultado'), 'simple', datosAnalisisSimple);
+  crearChat({ root: $('#chat'), storage });
   crearBonos({
     root: $('#bonos-campos'), storage, avisar,
     getReferencia: (mercado, punta) => precioMercado(mercado, punta),
