@@ -33,7 +33,7 @@ function restaurar(g) {
     })).filter((s) => s.puntos.length) : [];
     const a = r.accion;
     const accion = a && a.tipo === 'calculadora' && a.compra in MERCADOS_CALCULADORA && a.venta in MERCADOS_CALCULADORA && ['ars', 'unidades'].includes(a.modo)
-      ? { tipo: 'calculadora', compra: a.compra, venta: a.venta, modo: a.modo, monto: texto(a.monto, 40), base: texto(a.base, 40), precioVenta: texto(a.precioVenta, 40), conversionPct: texto(a.conversionPct, 40) } : null;
+      ? { tipo: 'calculadora', compra: a.compra, venta: a.venta, modo: a.modo, monto: texto(a.monto, 40), base: texto(a.base, 40), precioVenta: texto(a.precioVenta, 40), conversionPct: texto(a.conversionPct, 40), sentido: ['cobran', 'sobreprecio', 'dan'].includes(a.sentido) ? a.sentido : 'cobran' } : null;
     return [{ rol: 'brecha', respuesta: { ok: r.ok === true, frases: textos(r.frases, 20, 1000), avisos: textos(r.avisos, 10, 500), tabla, series, unidad: r.unidad === '%' ? '%' : r.unidad === 'ARS' ? 'ARS' : '', fuente: texto(r.fuente, 300), accion } }];
   });
 }

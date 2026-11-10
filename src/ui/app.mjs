@@ -5,7 +5,7 @@ import { toDec, plain } from '../engine/decimal.mjs';
 import { NO_APLICA, esNoAplica } from '../engine/costos.mjs';
 import { estadoCostoTexto, opcionesFiscal, bloqueCalidad, bloqueEconomico, bloqueExplicacion, tablaObjetivos, prefijoResultado, tono, tituloResultado } from './comun.mjs';
 import { explicarSimple } from '../engine/explicacion.mjs';
-import { relacionDesdePct, pctDesdeRelacion } from '../engine/conversion.mjs';
+import { relacionDesdePct, pctDesdeRelacion, SENTIDOS_CONVERSION, UNIDAD_SENTIDO } from '../engine/conversion.mjs';
 import { MERCADOS, IDS_MERCADOS, mercadoPorId } from '../quotes/markets.mjs';
 import { proveedorPorDefecto } from '../quotes/providers/index.mjs';
 import { consultarConReintentos, puedeConsultar, POLITICA_CONSULTA } from '../quotes/cliente.mjs';
@@ -400,10 +400,10 @@ function actualizarEtiquetas() {
   $('#relacion-hipotesis').disabled = mismo;
   $('#campo-relacion').classList.toggle('requerido', !mismo);
   $('#conversion-pregunta').textContent = mismo ? 'Conversión' : `¿Cuánto te cobran por pasar de ${na} a ${nb}?`;
-  $('#relacion-unidad').textContent = mismo ? 'no hace falta: comprás y vendés el mismo dólar' : '% de lo que pasás (obligatorio)';
+  $('#relacion-unidad').textContent = mismo ? 'no hace falta: comprás y vendés el mismo dólar' : `${UNIDAD_SENTIDO[$('#conversion-sentido').value] ?? UNIDAD_SENTIDO.cobran} (obligatorio)`;
   $('#relacion-hint').textContent = mismo
     ? ''
-    : `Comprás ${a.instrumento} y vendés ${b.instrumento}: no son lo mismo, y pasar de uno al otro suele tener un costo. Cargá el % que te cobran en esa operación (por ejemplo 1,5). Si no te cobran nada, poné 0. Si no lo sabés, no hay resultado; podés probar sin costo marcándolo como hipótesis.`;
+    : `Comprás ${a.instrumento} y vendés ${b.instrumento}: no son lo mismo, y pasar de uno al otro suele tener un costo. Cargá el % que te cobran en esa operación (por ejemplo 1,5) o, si pagás cada ${b.unidad} más caro que el ${a.unidad} (por ejemplo el oficial + 2 %), elegí «Pagás más caro». Si no te cobran nada, poné 0. Si no lo sabés, no hay resultado; podés probar sin costo marcándolo como hipótesis.`;
   for (const id of ['otros-cobro', 'transf-cobro']) {
     for (const o of $(`#${id}`).options) {
       const c = COBROS_FIJOS[o.value];
@@ -497,7 +497,10 @@ function echoConversion(el, input, pctValor) {
   const ua = mercadoPorId($('#mercado-compra').value).unidad;
   const ub = mercadoPorId($('#mercado-venta').value).unidad;
   if (toDec(pctValor).eq(0)) { el.textContent = `Sin costo: por cada 100 ${ua} recibís 100 ${ub}`; el.classList.add('cero'); return; }
-  el.textContent = `= por cada 100 ${ua} recibís ${formatNumberAR(r.relacion.times(100), { decimals: 6, minDecimals: 0 })} ${ub}`;
+  const recibis = `por cada 100 ${ua} recibís ${formatNumberAR(r.relacion.times(100), { decimals: 6, minDecimals: 0 })} ${ub}`;
+  el.textContent = $('#conversion-sentido').value === 'sobreprecio'
+    ? `= cada ${ub} te sale ${formatNumberAR(pctValor, { decimals: 6, minDecimals: 0 })} % más que el ${ua}: ${recibis}`
+    : `= ${recibis}`;
 }
 
 function leerFormulario() {
@@ -512,6 +515,8 @@ function leerFormulario() {
     if (campo.conversion && p.ok && !p.empty) {
       const r = relacionDesdePct(p.value, $('#conversion-sentido').value);
       entrada[campo.key] = r.ok ? r.relacion : INVALIDO;
+      // Cómo la cargaste (para decirlo igual en la explicación y en la ruta por pasos); el motor sólo usa R
+      if (r.ok) entrada.conversionDicha = { sentido: $('#conversion-sentido').value, pct: p.value };
     }
   }
   entrada.otrosCostos = { monto: entrada.otrosCostos, cobro: $('#otros-cobro').value };
@@ -519,7 +524,7 @@ function leerFormulario() {
   entrada.impuestoFiscal = $('#impuesto-fiscal').value;
   entrada.ivaFiscal = $('#iva-fiscal').value;
   entrada.requiereConversion = !mismoInstrumento();
-  if (mismoInstrumento()) entrada.relacionConversion = null; // mismo instrumento: no hay conversión
+  if (mismoInstrumento()) { entrada.relacionConversion = null; delete entrada.conversionDicha; } // mismo instrumento: no hay conversión
   entrada.relacionHipotesis = !mismoInstrumento() && $('#relacion-hipotesis').checked;
   return entrada;
 }
@@ -675,7 +680,7 @@ function renderResultado(r, entrada) {
       <p class="big" data-testid="resultado-neto">${prefijoResultado(nivel)}${formatARSSigned(x.resultadoNeto)}</p>
       <p class="roi">Resultado de caja · ROI neto ${nivel === 'incompleto' ? 'como máximo ' : ''}<strong class="${c}" data-testid="roi">${formatPct(x.roiPct)}</strong></p>
     </div>
-    ${bloqueExplicacion(explicarSimple(r, { mismoMercado: compra === venta, unidadOrigen: uo, unidadDestino: ud }))}
+    ${bloqueExplicacion(explicarSimple(r, { mismoMercado: compra === venta, unidadOrigen: uo, unidadDestino: ud, conversion: entrada.conversionDicha ?? null }))}
     ${bloqueEconomico(x.resultadoEconomico, x.resultadoNeto, { conceptos: x.fiscal.conceptos })}
     <dl class="kpis">
       <div><dt>Capital desembolsado</dt><dd data-testid="capital-inicial">${formatARS(x.capitalInicial)}</dd></div>
@@ -1111,7 +1116,7 @@ function abrirEscenarioEnCalculadora(a) {
   $('#precio-venta').value = a.precioVenta;
   sim.overrideVenta = true;
   $('#conversion').value = a.conversionPct;
-  $('#conversion-sentido').value = 'cobran';
+  $('#conversion-sentido').value = Object.hasOwn(SENTIDOS_CONVERSION, a.sentido) ? a.sentido : 'cobran';
   $('#relacion-hipotesis').checked = false;
   cambiarModo('simple');
   sincronizarPrecios();

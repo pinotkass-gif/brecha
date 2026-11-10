@@ -146,8 +146,9 @@
             <div class="field" id="campo-relacion">
               <label for="conversion"><span id="conversion-pregunta">Cuánto te cobran al pasar de un dólar al otro</span> <span class="unit" id="relacion-unidad">% de lo que pasás</span></label>
               <div class="with-action conversion">
-                <select id="conversion-sentido" name="conversionSentido" aria-label="Te cobran o te dan de más">
+                <select id="conversion-sentido" name="conversionSentido" aria-label="Cómo te cobran la conversión">
                   <option value="cobran">Te cobran</option>
+                  <option value="sobreprecio">Pagás más caro</option>
                   <option value="dan">Te dan de más</option>
                 </select>
                 <input id="conversion" name="conversionPct" type="text" inputmode="decimal" placeholder="No sé" aria-describedby="conversion-echo relacion-hint">

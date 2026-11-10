@@ -5,16 +5,8 @@
 import { calcularSimple } from '../engine/simple.mjs';
 import { NO_APLICA } from '../engine/costos.mjs';
 import { MERCADO_A_ACTIVO, corto } from './activos.mjs';
-import { pctDesdeRelacion } from '../engine/conversion.mjs';
+import { textoConversion } from '../engine/conversion.mjs';
 import { formatNumberAR } from '../engine/format.mjs';
-
-/** "te cobran 1,5 %" a partir de la relación (así se carga en la calculadora). */
-function textoCosto(R) {
-  const { sentido, pct } = pctDesdeRelacion(R);
-  const p = formatNumberAR(pct, { decimals: 6, minDecimals: 0 });
-  if (sentido === 'dan') return `te dan ${p} % de más`;
-  return pct.eq(0) ? 'sin costo (0 %)' : `te cobran ${p} %`;
-}
 
 /**
  * @param {import('../engine/simple.mjs').EntradaSimple} entradaSimple
@@ -34,6 +26,8 @@ export function rutaDesdeSimple(entradaSimple, mercadoCompra, mercadoVenta) {
   const est = v.estados;
   const R = v.relacionConversion;
   const notas = {};
+  /** "te cobran 1,5 %" o "pagás 2 % arriba del precio": como se cargó en la calculadora. */
+  const textoCosto = (rel) => textoConversion(entradaSimple.conversionDicha ?? null, rel);
   /** Valor para la ruta: lo que no sabés sigue sin saberse; "no aplica" sigue sin aplicar. */
   const m = (k) => (est[k] === 'desconocido' ? null : est[k] === 'no_aplica' ? NO_APLICA : v[k]);
   const sinComision = (k) => est[k] === 'cero' || est[k] === 'no_aplica';

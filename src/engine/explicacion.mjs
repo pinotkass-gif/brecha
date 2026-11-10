@@ -65,10 +65,11 @@ function fraseIncompleto(calidad, N, fmt, sujeto = 'la operación') {
 /**
  * Explicación del resultado de la calculadora simple.
  * @param {object} r  salida de calcularSimple
- * @param {{mismoMercado?: boolean, unidadOrigen?: string, unidadDestino?: string}} [opts]
+ * @param {{mismoMercado?: boolean, unidadOrigen?: string, unidadDestino?: string, conversion?: {sentido: string, pct: *}|null}} [opts]
+ *   conversion: cómo la cargó el usuario (para decir "pagás 2 % más caro" en vez de deducirlo de R)
  * @returns {string[]|null} frases (null si no hay resultado: ahí manda el bloque de DATOS INSUFICIENTES)
  */
-export function explicarSimple(r, { mismoMercado = false, unidadOrigen = 'USD', unidadDestino = 'USD' } = {}) {
+export function explicarSimple(r, { mismoMercado = false, unidadOrigen = 'USD', unidadDestino = 'USD', conversion = null } = {}) {
   if (!r?.ok || !r.result) return null;
   const x = r.result;
   const v = r.values ?? {};
@@ -89,7 +90,11 @@ export function explicarSimple(r, { mismoMercado = false, unidadOrigen = 'USD', 
   if (v.requiereConversion && !R.eq(1)) {
     const efecto = x.cantidadOrigen.times(R.minus(ONE)).times(V);
     const p = pctTxt(R.minus(ONE).times(HUNDRED));
-    frases.push(R.lt(1)
+    // Cargado como "pagás X % arriba del precio": se dice así (recibís menos por el sobreprecio, no por una comisión)
+    if (R.lt(1) && conversion?.sentido === 'sobreprecio') {
+      const dicho = formatNumberAR(toDec(conversion.pct), { decimals: 6, minDecimals: 0 });
+      frases.push(`Al pasar de ${unidadOrigen} a ${unidadDestino} pagás cada ${unidadDestino} ${dicho} % más caro (por cada 100 ${unidadOrigen} recibís ${formatNumberAR(R.times(HUNDRED), { decimals: 2, minDecimals: 0 })} ${unidadDestino}), y eso resta ${formatARS(efecto.abs())} a la diferencia entre puntas.`);
+    } else frases.push(R.lt(1)
       ? `Al pasar de ${unidadOrigen} a ${unidadDestino} te cobran ${p}: recibís ${p} menos, y eso resta ${formatARS(efecto.abs())} a la diferencia entre puntas.`
       : `Al pasar de ${unidadOrigen} a ${unidadDestino} te dan ${p} de más: eso suma ${formatARS(efecto)} a la diferencia entre puntas.`);
   }
