@@ -4,6 +4,7 @@
 import { interpretar, EJEMPLOS, hoyAR, MERCADOS_HIST } from '../historico/preguntas.mjs';
 import { responder, ayuda } from '../historico/analisis.mjs';
 import { crearFuenteHistorico } from '../historico/fuente.mjs';
+import { interpretarEscenario, calcularEscenario, MERCADOS_CALCULADORA } from '../chat/escenario.mjs';
 import { formatNumberAR } from '../engine/format.mjs';
 import { esc } from './comun.mjs';
 
@@ -30,7 +31,10 @@ function restaurar(g) {
       nombre: texto(s?.nombre, 60),
       puntos: Array.isArray(s?.puntos) ? s.puntos.filter((p) => p && /^\d{4}-\d{2}-\d{2}$/.test(p.fecha) && Number.isFinite(p.valor)).slice(0, 400) : [],
     })).filter((s) => s.puntos.length) : [];
-    return [{ rol: 'brecha', respuesta: { ok: r.ok === true, frases: textos(r.frases, 20, 1000), avisos: textos(r.avisos, 10, 500), tabla, series, unidad: r.unidad === '%' ? '%' : r.unidad === 'ARS' ? 'ARS' : '', fuente: texto(r.fuente, 300) } }];
+    const a = r.accion;
+    const accion = a && a.tipo === 'calculadora' && a.compra in MERCADOS_CALCULADORA && a.venta in MERCADOS_CALCULADORA && ['ars', 'unidades'].includes(a.modo)
+      ? { tipo: 'calculadora', compra: a.compra, venta: a.venta, modo: a.modo, monto: texto(a.monto, 40), base: texto(a.base, 40), precioVenta: texto(a.precioVenta, 40), conversionPct: texto(a.conversionPct, 40) } : null;
+    return [{ rol: 'brecha', respuesta: { ok: r.ok === true, frases: textos(r.frases, 20, 1000), avisos: textos(r.avisos, 10, 500), tabla, series, unidad: r.unidad === '%' ? '%' : r.unidad === 'ARS' ? 'ARS' : '', fuente: texto(r.fuente, 300), accion } }];
   });
 }
 
@@ -77,18 +81,26 @@ function grafico(series, unidad) {
   </svg>`;
 }
 
-function htmlRespuesta(r) {
+function htmlRespuesta(r, i) {
   const frases = r.frases.map((f) => `<p>${esc(f)}</p>`).join('');
+  const accion = r.accion ? `<div class="banner-actions"><button type="button" class="btn small" data-abrir-calculadora="${i}">Abrir en la calculadora</button></div>` : '';
   const avisos = r.avisos?.length ? `<ul class="chat-avisos">${r.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>` : '';
   const tabla = r.tabla ? `<details class="chat-tabla"><summary>Mes por mes</summary><div class="table-wrap"><table class="breakdown"><thead><tr>${r.tabla.cabeza.map((c) => `<th scope="col">${esc(c)}</th>`).join('')}</tr></thead><tbody>${r.tabla.filas.map((f) => `<tr>${f.map((c, i) => (i ? `<td>${esc(c)}</td>` : `<th scope="row">${esc(c)}</th>`)).join('')}</tr>`).join('')}</tbody></table></div></details>` : '';
   const fuente = r.fuente ? `<p class="chat-fuente">${esc(r.fuente)}</p>` : '';
-  return `${frases}${avisos}${r.ok ? grafico(r.series ?? [], r.unidad) : ''}${tabla}${fuente}`;
+  return `${frases}${avisos}${r.ok ? grafico(r.series ?? [], r.unidad) : ''}${tabla}${fuente}${accion}`;
+}
+
+/** Ayuda cuando la simulación no se entiende. */
+function ayudaEscenario(motivo) {
+  return [motivo === 'mercado_no_operable'
+    ? 'La simulación usa los mercados de la calculadora: oficial, blue, MEP, CCL y cripto (USDT/USDC).'
+    : 'No encontré qué dólar comprás.', 'Probá así: «consigo el oficial a 1535 y compro USDT al 2 %: ¿cómo salgo si vendo?». También podés decir a cuánto vendés («si vendo a 1650»), en qué mercado («y vendo al blue») y el monto («con 5.000 dólares» o «con 1 palo»).'];
 }
 
 /**
  * @param {{root: HTMLElement, storage: {get: Function, set: Function, trySet: Function}, ahora?: () => Date, fetch?: typeof fetch}} deps
  */
-export function crearChat({ root, storage, ahora = () => new Date(), fetch: f }) {
+export function crearChat({ root, storage, ahora = () => new Date(), fetch: f, precioDeHoy = () => null, onAbrirCalculadora = () => {} }) {
   const fuente = crearFuenteHistorico({ storage, ahora, fetch: f });
   let mensajes = restaurar(storage.get(KEY));
   let ocupado = false;
@@ -101,7 +113,7 @@ export function crearChat({ root, storage, ahora = () => new Date(), fetch: f })
         <input id="chat-pregunta" type="text" maxlength="300" enterkeyhint="send" placeholder="Ej.: ¿cómo estuvo la brecha oficial cripto los últimos 3 meses?">
         <button type="submit" class="btn primary" id="chat-enviar">Preguntar</button>
       </form>
-      <p class="hint chat-pie">Responde con las cotizaciones de cierre de cada día (ArgentinaDatos). No es una inteligencia artificial: entiende preguntas sobre oficial, blue, MEP, CCL, cripto, mayorista y tarjeta. <button type="button" class="btn ghost small" data-chat="borrar">Borrar la conversación</button></p>
+      <p class="hint chat-pie">Responde con las cotizaciones de cierre de cada día (ArgentinaDatos) y simula operaciones con el motor de la calculadora («consigo el oficial a 1535 y compro USDT al 2 %: ¿cómo salgo si vendo?»). No es una inteligencia artificial: entiende preguntas sobre oficial, blue, MEP, CCL, cripto, mayorista y tarjeta. <button type="button" class="btn ghost small" data-chat="borrar">Borrar la conversación</button></p>
     </div>`;
   const log = root.querySelector('.chat-log');
   const input = root.querySelector('#chat-pregunta');
@@ -113,10 +125,10 @@ export function crearChat({ root, storage, ahora = () => new Date(), fetch: f })
   }
 
   function render({ bajar = false } = {}) {
-    log.innerHTML = mensajes.length ? mensajes.map((m) => (m.rol === 'yo'
+    log.innerHTML = mensajes.length ? mensajes.map((m, i) => (m.rol === 'yo'
       ? `<li class="chat-msg yo"><p>${esc(m.texto)}</p></li>`
-      : `<li class="chat-msg brecha${m.respuesta?.ok ? '' : ' no-entendi'}${m.pendiente ? ' pendiente' : ''}" data-testid="chat-respuesta">${m.pendiente ? `<p>${esc(m.pendiente)}</p>` : htmlRespuesta(m.respuesta)}</li>`)).join('')
-      : '<li class="chat-msg brecha vacio"><p>Preguntame por el histórico de los dólares: brechas, máximos, mínimos, promedios o cuánto estaba un día. Tocá un ejemplo para empezar.</p></li>';
+      : `<li class="chat-msg brecha${m.respuesta?.ok ? '' : ' no-entendi'}${m.pendiente ? ' pendiente' : ''}" data-testid="chat-respuesta">${m.pendiente ? `<p>${esc(m.pendiente)}</p>` : htmlRespuesta(m.respuesta, i)}</li>`)).join('')
+      : '<li class="chat-msg brecha vacio"><p>Preguntame por el histórico de los dólares (brechas, máximos, mínimos, promedios o cuánto estaba un día) o contame una operación para ver cómo salís. Tocá un ejemplo para empezar.</p></li>';
     if (bajar) log.lastElementChild?.scrollIntoView?.({ block: 'nearest' }); // sólo al preguntar, nunca al abrir la app
     enviar.disabled = ocupado;
   }
@@ -126,6 +138,27 @@ export function crearChat({ root, storage, ahora = () => new Date(), fetch: f })
     if (!pregunta || ocupado) return;
     ocupado = true;
     mensajes.push({ rol: 'yo', texto: pregunta });
+    // ¿Una operación ("compro … y vendo …")? Se simula con el motor de la calculadora.
+    const e = interpretarEscenario(pregunta);
+    if (e) {
+      let r;
+      if (!e.ok) r = { ok: false, frases: ayudaEscenario(e.motivo) };
+      else {
+        // Precio de hoy de cada mercado; si no hay, el último cierre del histórico (y se dice de cuándo es).
+        const respaldo = {};
+        for (const [id, punta, dado] of [[e.esc.compra, 'venta', e.esc.precioCompra], [e.esc.venta, 'compra', e.esc.precioVenta]]) {
+          if (dado || precioDeHoy(id, punta)) continue;
+          const c = await fuente.cargar(id);
+          if (c.ok) { const u = c.filas.at(-1); respaldo[`${id}.${punta}`] = { valor: String(u[punta]), texto: `$ ${formatNumberAR(String(u[punta]), { decimals: 2 })}, último cierre del ${fmtFecha(u.fecha)} en ArgentinaDatos, porque hoy no hay cotización` }; }
+        }
+        r = calcularEscenario(e.esc, (id, punta) => precioDeHoy(id, punta) ?? respaldo[`${id}.${punta}`] ?? null);
+      }
+      mensajes.push({ rol: 'brecha', respuesta: { avisos: [], series: [], tabla: null, unidad: '', fuente: '', ...r } });
+      ocupado = false;
+      guardar();
+      render({ bajar: true });
+      return;
+    }
     const i = interpretar(pregunta, hoyAR(ahora()));
     if (!i.ok) {
       mensajes.push({ rol: 'brecha', respuesta: { ok: false, frases: ayuda(i.motivo), avisos: [], series: [], tabla: null, unidad: '', fuente: '' } });
@@ -162,6 +195,12 @@ export function crearChat({ root, storage, ahora = () => new Date(), fetch: f })
   root.addEventListener('click', (ev) => {
     const ej = ev.target.closest('[data-ejemplo]');
     if (ej) { preguntar(ej.dataset.ejemplo); return; }
+    const calc = ev.target.closest('[data-abrir-calculadora]');
+    if (calc) {
+      const a = mensajes[Number(calc.dataset.abrirCalculadora)]?.respuesta?.accion;
+      if (a) onAbrirCalculadora(a);
+      return;
+    }
     if (ev.target.closest('[data-chat="borrar"]')) {
       mensajes = [];
       storage.set(KEY, []);

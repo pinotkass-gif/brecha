@@ -1096,6 +1096,33 @@ function bind() {
   });
 }
 
+/* ---------- Chat → calculadora ---------- */
+/** Carga en la calculadora la operación que el chat entendió ("consigo el oficial a 1535 y paso a USDT al 2 %…"). */
+function abrirEscenarioEnCalculadora(a) {
+  if (!a || a.tipo !== 'calculadora' || !mercadoPorId(a.compra) || !mercadoPorId(a.venta)) return;
+  $('#mercado-compra').value = a.compra;
+  $('#mercado-venta').value = a.venta;
+  cambiarMercado();
+  $('#modo-monto').value = a.modo === 'ars' ? 'ars' : 'unidades';
+  $('#monto').value = a.monto;
+  $('#cotizacion-base').value = a.base;
+  sim.overrideBase = true;
+  $('#aumento').value = '';
+  $('#precio-venta').value = a.precioVenta;
+  sim.overrideVenta = true;
+  $('#conversion').value = a.conversionPct;
+  $('#conversion-sentido').value = 'cobran';
+  $('#relacion-hipotesis').checked = false;
+  cambiarModo('simple');
+  sincronizarPrecios();
+  recalcular();
+  irASimulacion();
+  const conCostos = CAMPOS.some((c) => c.costo && document.getElementById(c.el).value.trim() !== '');
+  avisar(conCostos
+    ? 'Cargué tu operación del chat. Dejé las comisiones que ya tenías en la calculadora: por eso el número puede ser distinto al del chat.'
+    : 'Cargué tu operación del chat. Las comisiones están en «No sé»: cargalas acá para ver el resultado real.');
+}
+
 /* ---------- Matriz → simuladores ---------- */
 function irASimulacion() {
   mostrarSeccion('sec-simulacion');
@@ -1329,7 +1356,11 @@ function init() {
     getSimulaciones: () => historial.registros(), evolucion: evolucionSimple,
   });
   analisis.enlazar($('#resultado'), 'simple', datosAnalisisSimple);
-  crearChat({ root: $('#chat'), storage });
+  crearChat({
+    root: $('#chat'), storage,
+    precioDeHoy: (id, punta) => { const v = precioMercado(id, punta); return v ? { valor: v, texto: textoFuente(id, punta, false) } : null; },
+    onAbrirCalculadora: abrirEscenarioEnCalculadora,
+  });
   crearBonos({
     root: $('#bonos-campos'), storage, avisar,
     getReferencia: (mercado, punta) => precioMercado(mercado, punta),

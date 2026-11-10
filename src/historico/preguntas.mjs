@@ -147,7 +147,7 @@ function ultimos(n, u, hoy, texto = null) {
 }
 
 /** Mercados nombrados, en el orden en que aparecen (sin repetir), con su posición en el texto. */
-function mercadosConPosicion(t) {
+export function mercadosConPosicion(t) {
   const hallados = [];
   for (const [id, def] of Object.entries(MERCADOS_HIST)) {
     let pos = -1;
@@ -217,6 +217,7 @@ export function interpretar(texto, hoy) {
 /** Ejemplos para mostrar (también son las sugerencias del chat). */
 export const EJEMPLOS = [
   '¿Cómo estuvo la brecha oficial cripto los últimos 3 meses?',
+  'Consigo el oficial a 1535 y compro USDT al 2 %: ¿cómo salgo si vendo?',
   '¿Cuál fue el máximo del blue este año?',
   '¿Cuánto subió el MEP el último mes?',
   'Brecha del CCL contra el MEP en octubre',
