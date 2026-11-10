@@ -22,6 +22,7 @@ import { crearCapturas } from './capturas.mjs';
 import { crearChat } from './chat.mjs';
 import { crearExchanges } from './exchanges.mjs';
 import { crearOpcionesUsdt } from './opciones-usdt.mjs';
+import { crearBancos } from './bancos.mjs';
 import { conversionComprando, conversionVendiendo } from '../exchanges/arbitraje.mjs';
 import { resumenDeSimple, resumenDeRuta, trazaDeSimple } from '../historial/modelo.mjs';
 import { simularRuta } from '../engine/route.mjs';
@@ -41,6 +42,7 @@ let oportunidades = null;
 let historial = null;
 let exchanges = null;
 let opcionesUsdt = null;
+let bancos = null;
 const KEY_TEMA = 'brecha.tema.v1';
 const KEY_NIVEL = 'brecha.nivel.v1';
 /** Niveles de uso: cada uno muestra más herramientas. Nada se borra: lo oculto se ve subiendo de nivel. */
@@ -92,7 +94,7 @@ function exchGuardado(x) {
   if (!x || typeof x !== 'object' || typeof x.id !== 'string' || !/^[a-z0-9]{1,30}$/.test(x.id)) return null;
   const nombre = typeof x.nombre === 'string' ? x.nombre.slice(0, 60) : x.id;
   const at = typeof x.at === 'string' && x.at.length <= 40 && !Number.isNaN(Date.parse(x.at)) ? x.at : null;
-  return { id: x.id, nombre, at, conComisiones: x.conComisiones !== false };
+  return { id: x.id, nombre, at, conComisiones: x.conComisiones !== false, banco: x.banco === true, manual: x.manual === true };
 }
 function exchRestaurado(g) {
   const out = {};
@@ -454,6 +456,7 @@ function textoFuente(id, punta, override) {
   const hoy = precioMercado(id, punta) ? formatQuote(precioMercado(id, punta)) : 'sin dato';
   if (override && sim.guardada?.[punta === 'venta' ? 'base' : 'venta']) return `Precio guardado en «${sim.guardada.nombre}» (${fecha(sim.guardada.fecha)}). Hoy ${def.nombre} ${punta}: ${hoy}`;
   const ex = override ? sim.exch[punta === 'venta' ? 'base' : 'venta'] : null;
+  if (ex?.banco) return `${ex.nombre} · ${ex.manual ? `la cargaste a mano${ex.at ? ` el ${fecha(ex.at)}` : ''}` : `CriptoYa${ex.at ? `, dato de ${fecha(ex.at)}` : ''}`} (${def.nombre} ${punta} en DolarAPI: ${hoy})`;
   if (ex) return `${ex.nombre} · CriptoYa, ${ex.conComisiones ? 'con' : 'sin'} comisiones${ex.at ? `, precio de las ${hora(ex.at)}` : ''} (${def.nombre} ${punta} en DolarAPI: ${hoy})`;
   if (override) return `Cargado a mano en la calculadora (${def.nombre} ${punta}: ${hoy})`;
   const m = cot.mercados[id];
@@ -839,6 +842,7 @@ function renderTodo() {
   recalcular();
   rutas?.alActualizarCotizaciones();
   exchanges?.refrescar(); // los recorridos con dólares usan estas cotizaciones
+  bancos?.render(); // "se aleja mucho del oficial" depende de estas cotizaciones
 }
 
 /* ---------- Modos: calculadora simple / simulador por pasos ---------- */
@@ -997,7 +1001,7 @@ function abrirRuta(r) {
 }
 
 function bind() {
-  $('#btn-actualizar').addEventListener('click', () => actualizarCotizaciones('manual'));
+  $('#btn-actualizar').addEventListener('click', () => { actualizarCotizaciones('manual'); bancos?.actualizar(true); });
   $('#politica').addEventListener('change', (ev) => {
     const id = ev.target.dataset?.politica;
     if (id) aplicarPolitica(id, ev.target.value);
@@ -1195,7 +1199,7 @@ function contextoOpciones() {
 /** «Usar» una opción: pone ese precio (o ese % de conversión) y avisa qué hizo con la comisión. */
 function usarOpcion(x) {
   const valor = formatNumberAR(x.precio, { decimals: 12, minDecimals: 0 });
-  const elegido = { id: x.id, nombre: x.nombre, at: x.at, conComisiones: x.conComisiones };
+  const elegido = { id: x.id, nombre: x.nombre, at: x.at, conComisiones: x.conComisiones, banco: x.fuente === 'bancos', manual: x.manual === true };
   let comision = '';
   const comisionEnPrecio = (campo, nombre) => {
     if (!x.conComisiones) return;
@@ -1222,7 +1226,9 @@ function usarOpcion(x) {
   sim.exch[x.clave] = elegido;
   sincronizarPrecios();
   recalcular();
-  const que = x.clave === 'conversion'
+  const que = x.fuente === 'bancos'
+    ? `Usé ${x.lado === 'compra' ? 'la venta' : 'la compra'} de ${x.nombre}: $ ${formatNumberAR(x.precio, { decimals: 2, minDecimals: 2 })}${x.manual ? ' (la cargaste vos)' : ''}.`
+    : x.clave === 'conversion'
     ? `Usé ${x.nombre} para pasar ${x.lado === 'compra' ? 'tus dólares a USDT' : 'tus USDT a dólares'} (US$ ${formatNumberAR(x.precio, { decimals: 4, minDecimals: 2 })} por USDT).`
     : `Usé el precio de ${x.nombre}: $ ${formatNumberAR(x.precio, { decimals: 4, minDecimals: 2 })}.`;
   avisar(`${que}${comision}`);
@@ -1475,6 +1481,10 @@ function init() {
     exchanges: { datos: () => exchanges?.datos() ?? Promise.resolve(null), preferencias: () => exchanges?.preferencias() ?? {} },
     onIrAExchanges: () => { mostrarSeccion('sec-exchanges'); $('#h-exch').scrollIntoView({ behavior: PLATAFORMA === 'celular' ? 'auto' : 'smooth', block: 'start' }); },
   });
+  bancos = crearBancos({
+    root: $('#bancos'), storage, avisar,
+    referencia: () => ({ compra: precioMercado('oficial', 'compra'), venta: precioMercado('oficial', 'venta') }),
+  });
   exchanges = crearExchanges({
     root: $('#exchanges'), seccion: $('#sec-exchanges'), storage,
     precioDolar: (id, punta) => { const v = precioMercado(id, punta); return v ? { valor: v, texto: textoFuente(id, punta, false) } : null; },
@@ -1482,9 +1492,11 @@ function init() {
   });
   opcionesUsdt = crearOpcionesUsdt({
     cont: { base: $('#opc-base'), venta: $('#opc-venta'), conversion: $('#opc-conversion') },
-    exchanges, getContexto: contextoOpciones, onUsar: usarOpcion, onCargarRetiro: cargarRetiro,
+    exchanges, bancos, getContexto: contextoOpciones, onUsar: usarOpcion, onCargarRetiro: cargarRetiro,
+    onIrAManual: () => { mostrarSeccion('sec-cotizaciones'); bancos.enfocarManual(); },
   });
   exchanges.alCambiar(() => opcionesUsdt.render());
+  bancos.alCambiar(() => opcionesUsdt.render());
   crearBonos({
     root: $('#bonos-campos'), storage, avisar,
     getReferencia: (mercado, punta) => precioMercado(mercado, punta),
@@ -1520,6 +1532,7 @@ function init() {
   renderTodo();
   bindTeclado();
   actualizarCotizaciones('auto');
+  bancos.actualizar(false); // Nación (CriptoYa); usa la copia si tiene menos de 15 min
   opcionesUsdt.alCambiarMercado(); // si la operación guardada pasa por USDT, trae los precios de los exchanges
   if (sim.avisoMigracion) avisar(sim.avisoMigracion);
   else if (sim.avisoConversion) avisar(sim.avisoConversion);

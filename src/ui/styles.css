@@ -623,3 +623,15 @@ html[data-plataforma="celular"] .exch-nums { align-items: center; text-align: le
 html[data-plataforma="celular"] .opc-item { grid-template-columns: minmax(0, 1fr) auto; }
 html[data-plataforma="celular"] .opc-precio, html[data-plataforma="celular"] .opc-rinde { grid-column: 1; justify-self: start; }
 html[data-plataforma="celular"] .opc-item .btn { grid-column: 2; grid-row: 1 / span 3; }
+
+/* ---------- Dólar oficial en bancos ---------- */
+.bancos { margin-top: 12px; }
+.bancos-head h3 { font-size: 15px; margin-bottom: 2px; }
+.bancos-head .hint { margin-bottom: 8px; }
+.cards.bancos-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.banco .fuente { min-height: 3em; }
+.banco-valor { font-size: 16px; color: var(--text); }
+.banco-manual { display: flex; flex-direction: column; gap: 6px; }
+.opc-item.sin-dato { opacity: 0.85; }
+@media (max-width: 860px) { .cards.bancos-cards { grid-template-columns: minmax(0, 1fr); } }
+html[data-plataforma="celular"] .cards.bancos-cards { grid-template-columns: minmax(0, 1fr); }

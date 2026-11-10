@@ -4,6 +4,7 @@
 // la lista de exchanges (precios de CriptoYa, los mismos de «USDT en exchanges»), de la mejor a la peor, con cuánto
 // rinde cada una frente al promedio (en verde las que rinden más) y un botón para usar ese precio. Nunca cambia un
 // precio sola: lo usa sólo si tocás «Usar».
+// Igual con el dólar oficial: si comprás o vendés el oficial, aparecen los bancos (Galicia a mano, Nación y Macro).
 import { prepararPrecios, opcionesLado, rinde, redParaPasar, nombreRed, nombreExchange, duracion } from '../exchanges/arbitraje.mjs';
 import { formatNumberAR } from '../engine/format.mjs';
 import { round, ONE, HUNDRED } from '../engine/decimal.mjs';
@@ -23,8 +24,10 @@ const HORA = new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Bue
 export function slotsPara(compra, venta) {
   const conv = compra !== venta && (compra === 'cripto' || venta === 'cripto');
   return {
-    base: compra === 'cripto' ? { titulo: 'Dónde comprar USDT con pesos', lado: 'compra', fiat: 'ARS' } : null,
-    venta: venta === 'cripto' ? { titulo: 'Dónde vender tus USDT por pesos', lado: 'venta', fiat: 'ARS' } : null,
+    base: compra === 'cripto' ? { titulo: 'Dónde comprar USDT con pesos', lado: 'compra', fiat: 'ARS' }
+      : compra === 'oficial' ? { titulo: 'Dónde comprar el dólar oficial', lado: 'compra', fiat: 'ARS', fuente: 'bancos' } : null,
+    venta: venta === 'cripto' ? { titulo: 'Dónde vender tus USDT por pesos', lado: 'venta', fiat: 'ARS' }
+      : venta === 'oficial' ? { titulo: 'Dónde vender el dólar oficial', lado: 'venta', fiat: 'ARS', fuente: 'bancos' } : null,
     conversion: !conv ? null : venta === 'cripto'
       ? { titulo: 'Dónde pasar tus dólares a USDT', lado: 'compra', fiat: 'USD' }
       : { titulo: 'Dónde pasar tus USDT a dólares', lado: 'venta', fiat: 'USD' },
@@ -45,7 +48,7 @@ export function pasoDeLaOperacion(compra, venta, elegidos) {
  *   getContexto: () => {compra: string, venta: string, actual: {base: *, venta: *, conversion: *}, elegidos: object, transf: string},
  *   onUsar: (x: object) => void, onCargarRetiro: (x: {valor: *, cobro: string, texto: string}) => void}} deps
  */
-export function crearOpcionesUsdt({ cont, exchanges, ahora = () => new Date(), getContexto, onUsar, onCargarRetiro }) {
+export function crearOpcionesUsdt({ cont, exchanges, bancos = null, ahora = () => new Date(), getContexto, onUsar, onCargarRetiro, onIrAManual = () => {} }) {
   const abiertos = { base: false, venta: false, conversion: false };
   let ultimo = {}; // opciones mostradas por lista (para los botones)
 
@@ -58,6 +61,40 @@ export function crearOpcionesUsdt({ cont, exchanges, ahora = () => new Date(), g
       ${e.nota ? `<p class="hint">${esc(e.nota)}</p>` : ''}`;
   }
 
+  /** Bancos: siempre los tres (los que no tienen dato al día, abajo y con el motivo): la lista no cambia de alto. */
+  function renderBancos(clave, def, ctx, el) {
+    const d = bancos.datosOpciones();
+    const { opciones } = opcionesLado(d.filas, def.lado);
+    const usables = new Set(opciones.map((o) => o.id));
+    const fila = (id) => d.filas.find((f) => f.id === id);
+    ultimo[clave] = { def, opciones, bancos: true, fila };
+    const elegido = ctx.elegidos?.[clave]?.id;
+    const mejor = opciones[0];
+    const actual = ctx.actual?.[clave];
+    let frente = '<p class="opc-actual">&nbsp;</p>';
+    if (mejor && elegido === mejor.id) frente = '<p class="opc-actual">Estás usando la mejor opción de la lista.</p>';
+    else if (mejor && opciones.length > 1 && actual && actual.gt(0)) {
+      const r = round(rinde(mejor.precio, actual, def.lado), 2);
+      if (r.gt(0)) frente = `<p class="opc-actual">La mejor, <strong>${esc(mejor.nombre)}</strong>, te rinde <strong class="opc-rinde mejor">${esc(pct(r))}</strong> más que lo que tenés cargado (${esc(precioArs(actual))}).</p>`;
+    } else if (mejor && actual && actual.gt(0)) {
+      const r = round(rinde(mejor.precio, actual, def.lado), 2);
+      if (!r.eq(0)) frente = `<p class="opc-actual">${esc(mejor.nombre)} te rinde <strong class="opc-rinde ${r.gt(0) ? 'mejor' : 'peor'}">${esc(pct(r))}</strong> frente a lo que tenés cargado (${esc(precioArs(actual))}).</p>`;
+    }
+    const sinDato = d.filas.filter((f) => !usables.has(f.id)).map((f) => {
+      const motivo = f.motivos.length ? `${f.origen === 'ninguno' ? 'sin dato al día: ' : ''}${f.motivos.join('; ')}`
+        : d.cargando ? 'trayendo la cotización…'
+          : f.origen === 'manual' && def.lado === 'venta' && !f.venta ? 'cargaste sólo la venta: falta la compra (lo que te paga)'
+            : f.apiViejo ? `sin dato al día (el último es del ${f.apiViejo.fecha.slice(8, 10)}/${f.apiViejo.fecha.slice(5, 7)}/${f.apiViejo.fecha.slice(0, 4)})` : 'sin dato';
+      const cargar = f.id === 'galicia' ? `<button type="button" class="btn small" data-opc-ir-manual>${f.origen === 'manual' ? 'Corregirla' : 'Cargala a mano'}</button>` : '';
+      return `<li class="opc-item sin-dato" data-testid="opc-${clave}-${f.id}"><span class="opc-nombre">${esc(f.nombre)}</span><span class="opc-precio hint">${esc(motivo)}</span><span></span>${cargar || '<span></span>'}</li>`;
+    }).join('');
+    const e = bancos.estado();
+    el.innerHTML = `<div class="opc-head"><p><strong>${esc(def.titulo)}</strong> <span class="hint">· bancos: Nación de CriptoYa, Galicia la cargás vos${def.lado === 'compra' ? ' (se usa la venta: lo que pagás)' : ' (se usa la compra: lo que te pagan)'}</span></p>
+        <button type="button" class="btn ghost small" data-opc-actualizar="bancos"${e.estado === 'cargando' ? ' disabled' : ''}>Actualizar</button></div>
+      ${e.nota ? `<p class="hint">${esc(e.nota)}</p>` : ''}${frente}
+      <ol class="opc-lista">${opciones.map((x, i) => item(clave, def, { ...x, origen: fila(x.id)?.origen }, i, elegido)).join('')}${sinDato}</ol>`;
+  }
+
   function item(clave, def, x, i, elegido) {
     const fmt = def.fiat === 'ARS' ? precioArs : precioUsd;
     const uso = elegido === x.id;
@@ -65,7 +102,7 @@ export function crearOpcionesUsdt({ cont, exchanges, ahora = () => new Date(), g
       ? ` <span class="hint">(${x.precio.gte(1) ? `${formatNumberAR(round(x.precio.minus(ONE).times(HUNDRED), 2), { decimals: 2, minDecimals: 0 })} % arriba` : `${formatNumberAR(round(ONE.minus(x.precio).times(HUNDRED), 2), { decimals: 2, minDecimals: 0 })} % abajo`} del dólar)</span>` : '';
     const clase = x.rinde.gt(0) ? 'mejor' : x.rinde.lt(0) ? 'peor' : 'igual';
     return `<li class="opc-item${uso ? ' en-uso' : ''}${i === 0 ? ' primera' : ''}" data-testid="opc-${clave}-${i}">
-      <span class="opc-nombre">${esc(x.nombre)}${x.p2p ? ' <span class="badge none">P2P</span>' : ''}${uso ? ' <span class="badge ok">en uso</span>' : ''}</span>
+      <span class="opc-nombre">${esc(x.nombre)}${x.p2p ? ' <span class="badge none">P2P</span>' : ''}${x.origen === 'manual' ? ' <span class="badge manual">a mano</span>' : ''}${uso ? ' <span class="badge ok">en uso</span>' : ''}</span>
       <span class="opc-precio">${esc(fmt(x.precio))}${def.fiat === 'USD' ? ' por USDT' : ''}${detalleUsd}</span>
       <span class="opc-rinde ${clase}" title="Cuánto más (o menos) te rinde que el promedio de los exchanges de la lista">${esc(pct(x.rinde))} vs. promedio</span>
       <button type="button" class="btn small" data-opc-usar="${clave}" data-i="${i}" aria-label="Usar ${esc(x.nombre)}: ${esc(fmt(x.precio))}"${uso ? ' disabled' : ''}>${uso ? 'Usando' : 'Usar'}</button></li>`;
@@ -102,6 +139,7 @@ export function crearOpcionesUsdt({ cont, exchanges, ahora = () => new Date(), g
       if (!el) continue;
       el.hidden = !def;
       if (!def) { el.innerHTML = ''; continue; }
+      if (def.fuente === 'bancos') { if (bancos) renderBancos(clave, def, ctx, el); else el.hidden = true; continue; }
       if (!datos) {
         el.innerHTML = `${cabeza(def, null, pref)}<p class="hint">${e.estado === 'cargando' ? 'Trayendo los precios de los exchanges…' : esc(e.error || 'Todavía no traje los precios de los exchanges.')}</p>`;
         continue;
@@ -136,13 +174,16 @@ export function crearOpcionesUsdt({ cont, exchanges, ahora = () => new Date(), g
   for (const [clave, el] of Object.entries(cont)) {
     if (!el) continue;
     el.addEventListener('click', (ev) => {
-      if (ev.target.closest('[data-opc-actualizar]')) { exchanges.actualizar(true); return; }
+      const act = ev.target.closest('[data-opc-actualizar]');
+      if (act) { if (act.dataset.opcActualizar === 'bancos') bancos?.actualizar(true); else exchanges.actualizar(true); return; }
+      if (ev.target.closest('[data-opc-ir-manual]')) { onIrAManual(); return; }
       const ret = ev.target.closest('[data-opc-retiro]');
       if (ret) { onCargarRetiro({ valor: ret.dataset.valor, cobro: ret.dataset.cobro }); return; }
       const b = ev.target.closest('[data-opc-usar]');
       const u = ultimo[clave];
       if (!b || !u) return;
       const x = u.opciones[Number(b.dataset.i)];
+      if (x && u.bancos) { const f = u.fila(x.id); onUsar({ clave, fuente: 'bancos', lado: u.def.lado, fiat: 'ARS', id: x.id, nombre: x.nombre, precio: x.precio, at: f?.fecha ?? null, manual: f?.origen === 'manual', conComisiones: false }); return; }
       if (x) onUsar({ clave, lado: u.def.lado, fiat: u.def.fiat, id: x.id, nombre: x.nombre, precio: x.precio, at: u.at, conComisiones: u.conComisiones });
     });
     el.addEventListener('toggle', (ev) => { if (ev.target.matches?.('[data-opc-mas]')) abiertos[clave] = ev.target.open; }, true);
@@ -162,7 +203,7 @@ export function crearOpcionesUsdt({ cont, exchanges, ahora = () => new Date(), g
     alCambiarMercado() {
       const ctx = getContexto();
       const s = slotsPara(ctx.compra, ctx.venta);
-      if (s.base || s.venta || s.conversion) exchanges.actualizar(false);
+      if ([s.base, s.venta, s.conversion].some((x) => x && x.fuente !== 'bancos')) exchanges.actualizar(false);
       render();
     },
   };
