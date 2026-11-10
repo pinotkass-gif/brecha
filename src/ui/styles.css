@@ -18,6 +18,7 @@
   --warn-bg: #f7ebd2;
   --focus: #8a4129;
   --radius: 10px;
+  --titulo: 'Italiana', 'Didot', 'Bodoni 72', 'Playfair Display', Georgia, serif;
   --shadow: 0 1px 2px rgb(60 50 40 / 6%);
   color-scheme: light;
 }
@@ -72,8 +73,8 @@ a { color: var(--accent); }
   padding: 16px max(16px, calc((100vw - 1200px) / 2));
   background: var(--surface); border-bottom: 1px solid var(--border);
 }
-.brand h1 { font-size: 22px; letter-spacing: -0.01em; }
-.brand p { color: var(--muted); font-size: 13px; }
+.brand h1 { font-family: var(--titulo); font-size: 36px; font-weight: 400; letter-spacing: 1px; line-height: 1; }
+.brand p { color: var(--accent); font-size: 11px; letter-spacing: 3px; text-transform: uppercase; margin-top: 6px; }
 .top-actions { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
 .status { color: var(--muted); font-size: 13px; max-width: 520px; }
 
@@ -99,7 +100,7 @@ html:has(body.con-barra) { scroll-padding-bottom: 84px; }
 main { max-width: 1200px; margin: 0 auto; padding: 8px 16px 24px; }
 .block { margin-top: 20px; }
 .block-head { margin-bottom: 10px; }
-.block-head h2 { font-size: 17px; }
+.block-head h2 { font-family: var(--titulo); font-size: 32px; font-weight: 400; letter-spacing: 0.5px; line-height: 1.1; }
 .hint { color: var(--muted); font-size: 13px; }
 
 /* Botones */
@@ -112,7 +113,9 @@ main { max-width: 1200px; margin: 0 auto; padding: 8px 16px 24px; }
 .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
 .btn.primary:disabled { opacity: 0.6; cursor: progress; }
 .btn.ghost { background: transparent; }
-.btn.small { padding: 4px 10px; font-size: 13px; }
+.btn.small { padding: 4px 12px; font-size: 13px; }
+/* Botones píldora, iguales en Inicio y en la app */
+.btn { border-radius: 999px; }
 
 /* Tarjetas de cotización */
 .cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
@@ -472,8 +475,8 @@ html[data-plataforma="celular"] .top {
   padding: max(10px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
 }
 html[data-plataforma="celular"] .brand { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
-html[data-plataforma="celular"] .brand h1 { font-size: 20px; }
-html[data-plataforma="celular"] .brand p { font-size: 12px; }
+html[data-plataforma="celular"] .brand h1 { font-size: 30px; }
+html[data-plataforma="celular"] .brand p { font-size: 10px; letter-spacing: 1.6px; flex-basis: 100%; margin-top: 2px; }
 html[data-plataforma="celular"] .nivel-uso { max-width: none; width: 100%; }
 html[data-plataforma="celular"] .nivel-uso .seg { display: flex; width: 100%; }
 html[data-plataforma="celular"] .nivel-uso .seg button { flex: 1 1 0; padding: 9px 4px; }
@@ -659,7 +662,7 @@ html.por-pestanas body[data-seccion="sec-inicio"] main { max-width: none; paddin
 html.por-pestanas body[data-seccion="sec-inicio"] .pestanas { background: rgb(253 252 249 / 80%); border-color: rgb(43 40 37 / 10%); box-shadow: none; }
 html.por-pestanas body[data-seccion="sec-inicio"] .pestanas button { color: #6c665f; }
 html.por-pestanas body[data-seccion="sec-inicio"] .pestanas button[aria-current="page"] { color: #b0573a; background: rgb(176 87 58 / 10%); }
-.inicio { --alto-arriba: 0px; position: relative; margin: 0; color: #2b2825; font-family: 'Outfit', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.inicio { --alto-arriba: 0px; position: relative; margin: 0; color: #2b2825; }
 .inicio-canvas, .inicio-fondo { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 .inicio-canvas { z-index: 0; outline: none; }
 .inicio-fondo { z-index: 0; background: radial-gradient(ellipse at 50% 42%, #fdfcf9 0%, #f8f5ef 55%, #efe8dc 100%); }
@@ -667,15 +670,15 @@ html.por-pestanas body[data-seccion="sec-inicio"] .pestanas button[aria-current=
 .inicio-recorrido { height: 700vh; }
 .inicio-capa { position: fixed; top: var(--alto-arriba); left: 0; right: 0; bottom: 0; z-index: 3; pointer-events: none; padding: 0 60px 40px; }
 .inicio-cabeza { display: flex; justify-content: space-between; align-items: center; padding: 18px 0; pointer-events: auto; }
-.inicio-marca { font-size: 14px; font-weight: 600; letter-spacing: 5px; text-transform: uppercase; }
+.inicio-marca { font-family: var(--titulo); font-size: 36px; font-weight: 400; letter-spacing: 1px; line-height: 1; }
 .inicio-saltar, .inicio-btn {
   display: inline-flex; align-items: center; gap: 8px; padding: 10px 22px; border-radius: 999px; cursor: pointer;
-  background: #2b2825; color: #fdfcf9; border: 1px solid #2b2825; font: 600 11px/1 'Outfit', system-ui, sans-serif; letter-spacing: 1.5px; text-transform: uppercase;
+  background: #b0573a; color: #ffffff; border: 1px solid #b0573a; font: 600 13px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; letter-spacing: 0.3px;
   transition: transform 0.3s, background 0.3s;
 }
-.inicio-saltar:hover, .inicio-btn:hover { transform: scale(1.05); background: #b0573a; border-color: #b0573a; }
-.inicio-btn.ghost { background: transparent; color: #2b2825; border-color: rgb(43 40 37 / 35%); }
-.inicio-btn.ghost:hover { background: rgb(43 40 37 / 6%); color: #2b2825; border-color: rgb(43 40 37 / 35%); }
+.inicio-saltar:hover, .inicio-btn:hover { transform: scale(1.04); background: #94462e; border-color: #94462e; }
+.inicio-btn.ghost { background: #fdfcf9; color: #2b2825; border-color: #e6dfd3; }
+.inicio-btn.ghost:hover { background: #f2ede4; color: #2b2825; border-color: #d9d0c2; }
 .inicio-circulo { width: 6px; height: 6px; border: 1px solid currentColor; border-radius: 50%; }
 .inicio-parte { position: absolute; bottom: 10%; left: 60px; right: 60px; visibility: hidden; pointer-events: none; transition: visibility 0s linear 0.9s; }
 .inicio-parte.activa { visibility: visible; pointer-events: auto; transition-delay: 0s; }
@@ -685,7 +688,7 @@ html.por-pestanas body[data-seccion="sec-inicio"] .pestanas button[aria-current=
 #inicio-3 { left: auto; right: 90px; max-width: min(560px, 36vw); text-align: right; }
 #inicio-3 .inicio-acciones { justify-content: flex-end; }
 #inicio-3 .inicio-texto { margin-left: auto; }
-.inicio-titulo { font-family: 'Italiana', 'Didot', 'Bodoni 72', 'Playfair Display', Georgia, serif; font-size: clamp(64px, 8vw, 116px); line-height: 1; font-weight: 400; letter-spacing: 2px; color: #2b2825; margin-bottom: 18px; }
+.inicio-titulo { font-family: var(--titulo); font-size: clamp(64px, 8vw, 116px); line-height: 1; font-weight: 400; letter-spacing: 2px; color: #2b2825; margin-bottom: 18px; }
 .inicio-titulo .letra { display: inline-block; opacity: 0; transform: translateY(50px); filter: blur(12px); transition: opacity 0.8s cubic-bezier(0.25, 1, 0.5, 1), transform 0.8s cubic-bezier(0.25, 1, 0.5, 1), filter 0.8s cubic-bezier(0.25, 1, 0.5, 1); }
 .inicio-parte.activa .inicio-titulo .letra { opacity: 1; transform: none; filter: none; }
 .inicio-bajada, .inicio-texto, .inicio-datos, .inicio-acciones { opacity: 0; transform: translateY(30px); transition: opacity 0.8s cubic-bezier(0.25, 1, 0.5, 1) 0.4s, transform 0.8s cubic-bezier(0.25, 1, 0.5, 1) 0.4s; }

@@ -6,7 +6,7 @@ import { esc } from './comun.mjs';
 
 const RANGOS = [[-0.1, 0.16], [0.26, 0.44], [0.54, 0.72], [0.82, 1.05]];
 const DESTINOS = [0, 0.35, 0.63, 0.93];
-const FUENTES = 'https://fonts.googleapis.com/css2?family=Italiana&family=Outfit:wght@300;400;600&display=swap';
+const FUENTES = 'https://fonts.googleapis.com/css2?family=Italiana&display=swap'; // ya viene en index.html; esto es por las dudas
 
 /** ¿El navegador puede hacer 3D? (se prueba en un canvas aparte para no tocar el de la escena) */
 function hayWebGL() {

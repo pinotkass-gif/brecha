@@ -1602,6 +1602,17 @@ function init() {
   else if (sim.avisoConversion) avisar(sim.avisoConversion);
   setInterval(refrescarEdades, 60000);
   registrarSinConexion();
+  // Italiana (la letra de los títulos, en Inicio y en la app): se baja cuando la página ya cargó, para no frenarla.
+  // Mientras tanto (o sin internet) se usa una serif del sistema.
+  const fuentes = () => {
+    if (document.querySelector('link[data-fuentes-inicio]')) return;
+    const l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?family=Italiana&display=swap';
+    l.dataset.fuentesInicio = '';
+    document.head.append(l);
+  };
+  if (document.readyState === 'complete') fuentes(); else window.addEventListener('load', fuentes, { once: true });
   window.brechaLista = true; // arrancó: los errores posteriores ya no son "no pudo arrancar" (ver index.html)
 }
 
