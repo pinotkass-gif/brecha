@@ -1,51 +1,52 @@
 /* Brecha · estilos. Tokens claros/oscuros; números tabulares; verde/rojo siempre con texto o ícono. */
+/* Paleta cálida y sobria (pedido 10/11/2026): crema, marrón oscuro y acento terracota. «Inicio» tiene sus propios colores. */
 :root {
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --surface-2: #f0f2f5;
-  --border: #dde1e7;
-  --text: #121821;
-  --muted: #5b6573;
-  --accent: #0f766e;
+  --bg: #f4efe6;
+  --surface: #fbf8f3;
+  --surface-2: #ede6da;
+  --border: #ddd3c3;
+  --text: #2a241f;
+  --muted: #6b6155;
+  --accent: #b0573a;
   --accent-ink: #ffffff;
-  --pos: #0b7a3e;
-  --pos-bg: #e5f5ec;
-  --neg: #b42318;
-  --neg-bg: #fdecea;
-  --neu: #4b5563;
-  --warn: #8a5a00;
-  --warn-bg: #fff6e0;
-  --focus: #2563eb;
+  --pos: #3f7337;
+  --pos-bg: #e8eedc;
+  --neg: #a8382b;
+  --neg-bg: #f7e3dc;
+  --neu: #5f564b;
+  --warn: #875a10;
+  --warn-bg: #f7ebd2;
+  --focus: #8a4129;
   --radius: 10px;
-  --shadow: 0 1px 2px rgb(16 24 40 / 6%);
+  --shadow: 0 1px 2px rgb(60 40 20 / 7%);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0d1117;
-    --surface: #151b23;
-    --surface-2: #1c2430;
-    --border: #2a3441;
-    --text: #e6edf3;
-    --muted: #9aa6b2;
-    --accent: #2dd4bf;
-    --accent-ink: #062925;
-    --pos: #4ade80;
-    --pos-bg: #0f2a1b;
-    --neg: #f87171;
-    --neg-bg: #2d1414;
-    --neu: #9aa6b2;
-    --warn: #fbbf24;
-    --warn-bg: #2a2110;
-    --focus: #60a5fa;
+    --bg: #1c1916;
+    --surface: #25211d;
+    --surface-2: #2e2924;
+    --border: #453d34;
+    --text: #f0e9de;
+    --muted: #b2a695;
+    --accent: #e0906d;
+    --accent-ink: #1c1916;
+    --pos: #9cc58a;
+    --pos-bg: #232b1d;
+    --neg: #ee9384;
+    --neg-bg: #33201b;
+    --neu: #b2a695;
+    --warn: #e3b45f;
+    --warn-bg: #30271a;
+    --focus: #f0b090;
     --shadow: none;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0d1117; --surface: #151b23; --surface-2: #1c2430; --border: #2a3441; --text: #e6edf3; --muted: #9aa6b2;
-  --accent: #2dd4bf; --accent-ink: #062925; --pos: #4ade80; --pos-bg: #0f2a1b; --neg: #f87171; --neg-bg: #2d1414;
-  --neu: #9aa6b2; --warn: #fbbf24; --warn-bg: #2a2110; --focus: #60a5fa; --shadow: none; color-scheme: dark;
+  --bg: #1c1916; --surface: #25211d; --surface-2: #2e2924; --border: #453d34; --text: #f0e9de; --muted: #b2a695;
+  --accent: #e0906d; --accent-ink: #1c1916; --pos: #9cc58a; --pos-bg: #232b1d; --neg: #ee9384; --neg-bg: #33201b;
+  --neu: #b2a695; --warn: #e3b45f; --warn-bg: #30271a; --focus: #f0b090; --shadow: none; color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -442,8 +443,8 @@ legend { font-weight: 600; font-size: 13px; padding: 0 6px; color: var(--muted);
 .calidad-tabla .contraste input { width: 92px; margin: 2px; }
 .calendario textarea { width: 100%; font: inherit; }
 .badge.neg { color: var(--neg); background: var(--neg-bg); }
-.grafico .s-oficial { stroke: #2563eb; } .grafico .s-blue { stroke: #d97706; } .grafico .s-mep { stroke: #059669; }
-.grafico .s-ccl { stroke: #7c3aed; } .grafico .s-cripto { stroke: #dc2626; }
+.grafico .s-oficial { stroke: #3b6ea5; } .grafico .s-blue { stroke: #c08a2e; } .grafico .s-mep { stroke: #4f8a5b; }
+.grafico .s-ccl { stroke: #7a5c9e; } .grafico .s-cripto { stroke: #a8382b; }
 .plataformas { list-style: none; padding: 0; margin: 0 0 10px; display: flex; flex-direction: column; gap: 12px; }
 .plataforma { border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: var(--surface); }
 .redes { list-style: none; padding: 0; margin: 0 0 6px; display: flex; flex-direction: column; gap: 6px; }
@@ -554,8 +555,8 @@ html[data-plataforma="celular"] .foot { padding-inline: max(16px, env(safe-area-
 .chat-fuente { font-size: 12px; color: var(--muted); }
 .chat-tabla summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--accent); }
 .chat-grafico .serie { fill: none; stroke-width: 2; }
-.chat-grafico .s-0 { stroke: var(--accent); } .chat-grafico .s-1 { stroke: #d97706; } .chat-grafico .s-2 { stroke: #7c3aed; }
-.chat-grafico .s-3 { stroke: #dc2626; } .chat-grafico .s-4 { stroke: #2563eb; } .chat-grafico .s-5 { stroke: #059669; } .chat-grafico .s-6 { stroke: var(--muted); }
+.chat-grafico .s-0 { stroke: var(--accent); } .chat-grafico .s-1 { stroke: #c08a2e; } .chat-grafico .s-2 { stroke: #7a5c9e; }
+.chat-grafico .s-3 { stroke: #a8382b; } .chat-grafico .s-4 { stroke: #3b6ea5; } .chat-grafico .s-5 { stroke: #4f8a5b; } .chat-grafico .s-6 { stroke: var(--muted); }
 .chat-sugerencias { display: flex; flex-wrap: wrap; gap: 6px; }
 .chat-sugerencias .btn { text-align: left; }
 .chat-form { display: flex; gap: 8px; align-items: center; }
