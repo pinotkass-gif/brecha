@@ -20,6 +20,9 @@ import { crearBonos } from './bonos.mjs';
 import { crearPlataformas } from './plataformas.mjs';
 import { crearCapturas } from './capturas.mjs';
 import { crearChat } from './chat.mjs';
+import { crearExchanges } from './exchanges.mjs';
+import { crearOpcionesUsdt } from './opciones-usdt.mjs';
+import { conversionComprando, conversionVendiendo } from '../exchanges/arbitraje.mjs';
 import { resumenDeSimple, resumenDeRuta, trazaDeSimple } from '../historial/modelo.mjs';
 import { simularRuta } from '../engine/route.mjs';
 import { rutaDesdeSimple } from '../routes/desde-simple.mjs';
@@ -36,6 +39,8 @@ const KEY_POLITICA = 'brecha.politica.v1';
 let rutas = null;
 let oportunidades = null;
 let historial = null;
+let exchanges = null;
+let opcionesUsdt = null;
 const KEY_TEMA = 'brecha.tema.v1';
 const KEY_NIVEL = 'brecha.nivel.v1';
 /** Niveles de uso: cada uno muestra más herramientas. Nada se borra: lo oculto se ve subiendo de nivel. */
@@ -49,7 +54,7 @@ const rangoNivel = (n) => NIVELES_USO.indexOf(n);
 /** Versión: 'celular' (pestañas abajo, compacta) o 'web' (compu). La define index.html (scripts/variantes.mjs). */
 const PLATAFORMA = document.documentElement.dataset.plataforma === 'celular' ? 'celular' : 'web';
 const KEY_SECCION = 'brecha.seccion.v1';
-const SECCIONES = ['sec-simulacion', 'sec-cotizaciones', 'sec-preguntar', 'oportunidades', 'historial'];
+const SECCIONES = ['sec-simulacion', 'sec-cotizaciones', 'sec-exchanges', 'sec-preguntar', 'oportunidades', 'historial'];
 let nivelUso = 'profesional';
 const INVALIDO = '__invalido__';
 const PROVEEDOR = proveedorPorDefecto;
@@ -81,7 +86,19 @@ let calendario = restaurarCalendario(storage.get(KEY_CAL));
 let contraste = restaurarContraste(storage.get(KEY_CONTRASTE));
 let analisis = null;
 let capturas = null;
-const sim = { overrideBase: false, overrideVenta: false, consultando: false, nota: '' };
+const sim = { overrideBase: false, overrideVenta: false, consultando: false, nota: '', exch: {} };
+/** Precio elegido de un exchange (calculadora): se valida al leerlo del navegador. */
+function exchGuardado(x) {
+  if (!x || typeof x !== 'object' || typeof x.id !== 'string' || !/^[a-z0-9]{1,30}$/.test(x.id)) return null;
+  const nombre = typeof x.nombre === 'string' ? x.nombre.slice(0, 60) : x.id;
+  const at = typeof x.at === 'string' && x.at.length <= 40 && !Number.isNaN(Date.parse(x.at)) ? x.at : null;
+  return { id: x.id, nombre, at, conComisiones: x.conComisiones !== false };
+}
+function exchRestaurado(g) {
+  const out = {};
+  if (g && typeof g === 'object') for (const k of ['base', 'venta', 'conversion']) { const x = exchGuardado(g[k]); if (x) out[k] = x; }
+  return out;
+}
 /** Estado de frescura de un mercado según la política vigente y el calendario (feriados). */
 const estadoDe = (id) => clasificar(cot.mercados[id], id, { politica, cal: calendario });
 /** Control de coherencia entre mercados (alertas; nunca cambia precios). */
@@ -371,6 +388,8 @@ function refrescarEdades() {
   sincronizarPrecios();
   recalcular();
   rutas?.refrescar();
+  exchanges?.refrescar();
+  opcionesUsdt?.render(); // "hace X min"
 }
 
 /* ---------- Formulario ---------- */
@@ -434,6 +453,8 @@ function textoFuente(id, punta, override) {
   const def = mercadoPorId(id);
   const hoy = precioMercado(id, punta) ? formatQuote(precioMercado(id, punta)) : 'sin dato';
   if (override && sim.guardada?.[punta === 'venta' ? 'base' : 'venta']) return `Precio guardado en «${sim.guardada.nombre}» (${fecha(sim.guardada.fecha)}). Hoy ${def.nombre} ${punta}: ${hoy}`;
+  const ex = override ? sim.exch[punta === 'venta' ? 'base' : 'venta'] : null;
+  if (ex) return `${ex.nombre} · CriptoYa, ${ex.conComisiones ? 'con' : 'sin'} comisiones${ex.at ? `, precio de las ${hora(ex.at)}` : ''} (${def.nombre} ${punta} en DolarAPI: ${hoy})`;
   if (override) return `Cargado a mano en la calculadora (${def.nombre} ${punta}: ${hoy})`;
   const m = cot.mercados[id];
   const c = estadoDe(id);
@@ -530,7 +551,7 @@ function leerFormulario() {
 }
 
 function datosFormulario() {
-  const data = { version: 3, overrideBase: sim.overrideBase, overrideVenta: sim.overrideVenta, campos: {}, selects: {}, checks: {}, masCostos: $('#mas-costos').open };
+  const data = { version: 3, overrideBase: sim.overrideBase, overrideVenta: sim.overrideVenta, exch: sim.exch, campos: {}, selects: {}, checks: {}, masCostos: $('#mas-costos').open };
   for (const c of CAMPOS) data.campos[c.el] = document.getElementById(c.el).value;
   for (const s of SELECTS) data.selects[s] = document.getElementById(s).value;
   for (const k of CHECKS) data.checks[k] = document.getElementById(k).checked;
@@ -572,6 +593,9 @@ function aplicarFormulario(d) {
   }
   sim.overrideBase = d.overrideBase === true;
   sim.overrideVenta = d.overrideVenta === true;
+  sim.exch = exchRestaurado(d.exch);
+  if (!sim.overrideBase) delete sim.exch.base;
+  if (!sim.overrideVenta) delete sim.exch.venta;
   if (d.masCostos) $('#mas-costos').open = true;
   return convertido || v1;
 }
@@ -801,6 +825,7 @@ function recalcular() {
   renderResultado(calcularSimple(entrada), entrada);
   avisoOcultos();
   oportunidades?.render();
+  opcionesUsdt?.render();
   guardarFormulario();
   actualizarBarra();
 }
@@ -813,6 +838,7 @@ function renderTodo() {
   sincronizarPrecios();
   recalcular();
   rutas?.alActualizarCotizaciones();
+  exchanges?.refrescar(); // los recorridos con dólares usan estas cotizaciones
 }
 
 /* ---------- Modos: calculadora simple / simulador por pasos ---------- */
@@ -860,8 +886,10 @@ function cambiarMercado() {
   sim.overrideBase = false;
   sim.overrideVenta = false;
   sim.guardada = null;
+  sim.exch = {};
   sincronizarPrecios();
   recalcular();
+  opcionesUsdt?.alCambiarMercado(); // si ahora pasa por USDT, aparecen las opciones de los exchanges
 }
 
 /* ---------- Historial ---------- */
@@ -1001,8 +1029,9 @@ function bind() {
   $('#form-sim').addEventListener('input', (ev) => {
     sim.notaGuardada = null;
     const id = ev.target.id;
-    if (id === 'cotizacion-base') { sim.overrideBase = true; if (sim.guardada) sim.guardada.base = false; }
-    if (id === 'precio-venta') { sim.overrideVenta = true; if (sim.guardada) sim.guardada.venta = false; }
+    if (id === 'cotizacion-base') { sim.overrideBase = true; delete sim.exch.base; if (sim.guardada) sim.guardada.base = false; }
+    if (id === 'precio-venta') { sim.overrideVenta = true; delete sim.exch.venta; if (sim.guardada) sim.guardada.venta = false; }
+    if (id === 'conversion') delete sim.exch.conversion;
     if (id === 'cotizacion-base' || id === 'precio-venta') {
       $('#reset-base').hidden = !sim.overrideBase;
       $('#reset-venta').hidden = !sim.overrideVenta;
@@ -1013,6 +1042,7 @@ function bind() {
   });
   $('#form-sim').addEventListener('change', (ev) => {
     const id = ev.target.id;
+    if (id === 'conversion-sentido') delete sim.exch.conversion;
     if (id === 'mercado-compra' || id === 'mercado-venta') cambiarMercado();
     else if (ev.target.tagName === 'SELECT' || ev.target.type === 'checkbox') recalcular();
   });
@@ -1057,8 +1087,8 @@ function bind() {
   });
   $('#form-sim').addEventListener('submit', (ev) => ev.preventDefault());
   $('#mas-costos').addEventListener('toggle', guardarFormulario);
-  $('#reset-base').addEventListener('click', () => { sim.overrideBase = false; if (sim.guardada) sim.guardada.base = false; sincronizarPrecios(); recalcular(); });
-  $('#reset-venta').addEventListener('click', () => { sim.overrideVenta = false; if (sim.guardada) sim.guardada.venta = false; sincronizarPrecios(); recalcular(); });
+  $('#reset-base').addEventListener('click', () => { sim.overrideBase = false; delete sim.exch.base; if (sim.guardada) sim.guardada.base = false; sincronizarPrecios(); recalcular(); });
+  $('#reset-venta').addEventListener('click', () => { sim.overrideVenta = false; delete sim.exch.venta; if (sim.guardada) sim.guardada.venta = false; sincronizarPrecios(); recalcular(); });
 
   // Edición de tarjetas: se aplica al confirmar (Enter o salir del campo) para no perder el foco.
   $('#cotizaciones').addEventListener('change', (ev) => {
@@ -1101,8 +1131,11 @@ function bind() {
   });
 }
 
-/* ---------- Chat → calculadora ---------- */
-/** Carga en la calculadora la operación que el chat entendió ("consigo el oficial a 1535 y paso a USDT al 2 %…"). */
+/* ---------- Chat y exchanges → calculadora ---------- */
+/**
+ * Carga en la calculadora la operación que el chat entendió ("consigo el oficial a 1535 y paso a USDT al 2 %…")
+ * o una combinación de la sección de exchanges (con `costos`: comisiones que ya están en el precio y retiro de USDT).
+ */
 function abrirEscenarioEnCalculadora(a) {
   if (!a || a.tipo !== 'calculadora' || !mercadoPorId(a.compra) || !mercadoPorId(a.venta)) return;
   $('#mercado-compra').value = a.compra;
@@ -1118,14 +1151,88 @@ function abrirEscenarioEnCalculadora(a) {
   $('#conversion').value = a.conversionPct;
   $('#conversion-sentido').value = Object.hasOwn(SENTIDOS_CONVERSION, a.sentido) ? a.sentido : 'cobran';
   $('#relacion-hipotesis').checked = false;
+  sim.exch = exchRestaurado(a.exch);
+  const k = a.costos && typeof a.costos === 'object' ? a.costos : null;
+  if (k) {
+    // Sólo lo que la combinación sabe (números ya escritos en formato argentino); lo demás queda como estaba (vacío = «No sé»).
+    const poner = (id, v) => { if (typeof v === 'string' && v.length <= 60) $(`#${id}`).value = v; };
+    poner('com-compra', k.comCompra);
+    poner('com-venta', k.comVenta);
+    if (Object.hasOwn(COBROS_FIJOS, k.transfCobro)) $('#transf-cobro').value = k.transfCobro;
+    $('#transf').value = typeof k.transf === 'string' && k.transf.length <= 60 ? k.transf : '';
+  }
   cambiarModo('simple');
   sincronizarPrecios();
   recalcular();
   irASimulacion();
+  if (a.origen === 'exchanges') {
+    avisar(`Cargué la combinación de los exchanges.${k?.comCompra === 'no aplica' || k?.comVenta === 'no aplica' ? ' Las comisiones del exchange ya están en el precio.' : ''}${k?.transf && !esNoAplica(k.transf) ? ' El retiro de USDT quedó en «Costo de transferencia».' : ''} Impuestos y demás costos: cargalos acá.`);
+    return;
+  }
   const conCostos = CAMPOS.some((c) => c.costo && document.getElementById(c.el).value.trim() !== '');
   avisar(conCostos
     ? 'Cargué tu operación del chat. Dejé las comisiones que ya tenías en la calculadora: por eso el número puede ser distinto al del chat.'
     : 'Cargué tu operación del chat. Las comisiones están en «No sé»: cargalas acá para ver el resultado real.');
+}
+
+/* ---------- Opciones de exchange en la calculadora ---------- */
+/** Precio equivalente de lo cargado en la conversión (dólares por USDT), para compararlo con los exchanges. */
+function conversionComoPrecio() {
+  const p = parseNumberAR($('#conversion').value, { kind: 'percent' });
+  if (!p.ok || p.empty) return null;
+  const r = relacionDesdePct(p.value, $('#conversion-sentido').value);
+  if (!r.ok || !r.relacion.gt(0)) return null;
+  return $('#mercado-venta').value === 'cripto' ? toDec(1).div(r.relacion) : r.relacion;
+}
+function contextoOpciones() {
+  const leer = (id) => { const p = parseNumberAR($(`#${id}`).value, { kind: 'money' }); return p.ok && !p.empty ? p.value : null; };
+  return {
+    compra: $('#mercado-compra').value, venta: $('#mercado-venta').value,
+    actual: { base: leer('cotizacion-base'), venta: leer('precio-venta'), conversion: conversionComoPrecio() },
+    elegidos: sim.exch, transf: $('#transf').value.trim(), transfCobro: $('#transf-cobro').value,
+  };
+}
+/** «Usar» una opción: pone ese precio (o ese % de conversión) y avisa qué hizo con la comisión. */
+function usarOpcion(x) {
+  const valor = formatNumberAR(x.precio, { decimals: 12, minDecimals: 0 });
+  const elegido = { id: x.id, nombre: x.nombre, at: x.at, conComisiones: x.conComisiones };
+  let comision = '';
+  const comisionEnPrecio = (campo, nombre) => {
+    if (!x.conComisiones) return;
+    const el = $(`#${campo}`);
+    if (!el.value.trim()) { el.value = 'no aplica'; comision = ` La ${nombre} quedó «no aplica»: ya está en el precio.`; }
+    else if (!esNoAplica(el.value)) comision = ` Ojo: tenés cargada una ${nombre}; si es la del exchange, ponela en «no aplica» para no cobrarla dos veces (ya está en el precio).`;
+  };
+  if (x.clave === 'base') {
+    $('#cotizacion-base').value = valor;
+    sim.overrideBase = true;
+    if (sim.guardada) sim.guardada.base = false;
+    comisionEnPrecio('com-compra', 'comisión de compra');
+  } else if (x.clave === 'venta') {
+    $('#precio-venta').value = valor;
+    sim.overrideVenta = true;
+    if (sim.guardada) sim.guardada.venta = false;
+    comisionEnPrecio('com-venta', 'comisión de venta');
+  } else {
+    const c = x.lado === 'compra' ? conversionComprando(x.precio) : conversionVendiendo(x.precio);
+    $('#conversion-sentido').value = c.sentido;
+    $('#conversion').value = formatNumberAR(toDec(c.pct), { decimals: 12, minDecimals: 0 });
+    $('#relacion-hipotesis').checked = false;
+  }
+  sim.exch[x.clave] = elegido;
+  sincronizarPrecios();
+  recalcular();
+  const que = x.clave === 'conversion'
+    ? `Usé ${x.nombre} para pasar ${x.lado === 'compra' ? 'tus dólares a USDT' : 'tus USDT a dólares'} (US$ ${formatNumberAR(x.precio, { decimals: 4, minDecimals: 2 })} por USDT).`
+    : `Usé el precio de ${x.nombre}: $ ${formatNumberAR(x.precio, { decimals: 4, minDecimals: 2 })}.`;
+  avisar(`${que}${comision}`);
+}
+function cargarRetiro({ valor, cobro }) {
+  if (!Object.hasOwn(COBROS_FIJOS, cobro) || typeof valor !== 'string' || valor.length > 40) return;
+  $('#transf-cobro').value = cobro;
+  $('#transf').value = valor;
+  recalcular();
+  avisar(`Cargué ${valor} USDT en «Costo de transferencia» (lo que cuesta pasar los USDT de un exchange al otro).`);
 }
 
 /* ---------- Matriz → simuladores ---------- */
@@ -1365,7 +1472,19 @@ function init() {
     root: $('#chat'), storage,
     precioDeHoy: (id, punta) => { const v = precioMercado(id, punta); return v ? { valor: v, texto: textoFuente(id, punta, false) } : null; },
     onAbrirCalculadora: abrirEscenarioEnCalculadora,
+    exchanges: { datos: () => exchanges?.datos() ?? Promise.resolve(null), preferencias: () => exchanges?.preferencias() ?? {} },
+    onIrAExchanges: () => { mostrarSeccion('sec-exchanges'); $('#h-exch').scrollIntoView({ behavior: PLATAFORMA === 'celular' ? 'auto' : 'smooth', block: 'start' }); },
   });
+  exchanges = crearExchanges({
+    root: $('#exchanges'), seccion: $('#sec-exchanges'), storage,
+    precioDolar: (id, punta) => { const v = precioMercado(id, punta); return v ? { valor: v, texto: textoFuente(id, punta, false) } : null; },
+    onAbrirCalculadora: abrirEscenarioEnCalculadora,
+  });
+  opcionesUsdt = crearOpcionesUsdt({
+    cont: { base: $('#opc-base'), venta: $('#opc-venta'), conversion: $('#opc-conversion') },
+    exchanges, getContexto: contextoOpciones, onUsar: usarOpcion, onCargarRetiro: cargarRetiro,
+  });
+  exchanges.alCambiar(() => opcionesUsdt.render());
   crearBonos({
     root: $('#bonos-campos'), storage, avisar,
     getReferencia: (mercado, punta) => precioMercado(mercado, punta),
@@ -1401,6 +1520,7 @@ function init() {
   renderTodo();
   bindTeclado();
   actualizarCotizaciones('auto');
+  opcionesUsdt.alCambiarMercado(); // si la operación guardada pasa por USDT, trae los precios de los exchanges
   if (sim.avisoMigracion) avisar(sim.avisoMigracion);
   else if (sim.avisoConversion) avisar(sim.avisoConversion);
   setInterval(refrescarEdades, 60000);

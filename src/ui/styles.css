@@ -559,3 +559,67 @@ html[data-plataforma="celular"] .foot { padding-inline: max(16px, env(safe-area-
 .chat-form .btn { flex: none; }
 .chat-pie { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
 html[data-plataforma="celular"] body[data-seccion="sec-preguntar"] #sec-preguntar { display: block; }
+
+/* ---------- USDT en exchanges ---------- */
+.exch-controles { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 220px) minmax(0, 1fr); gap: 10px 14px; align-items: start; }
+.exch-checks { display: flex; flex-direction: column; gap: 4px; padding-top: 20px; }
+.exch-estado { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; justify-content: space-between; margin-top: 10px; font-size: 13px; color: var(--muted); }
+.exch-estado p { flex: 1 1 320px; }
+.exch-estado p.error { color: var(--neg); }
+.exch-estado p.warn { color: var(--warn); }
+.exch-mejores { font-size: 14px; margin-top: 6px; }
+.exch-mejores:empty { display: none; }
+.exch-mercado { max-width: 420px; margin-bottom: 8px; }
+.exch-lista { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.exch-item { display: flex; justify-content: space-between; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.exch-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.exch-ruta { font-size: 14px; }
+.exch-sub { font-size: 12px; color: var(--muted); }
+.exch-notas { margin: 0; padding-left: 18px; font-size: 12px; color: var(--muted); }
+.exch-nums { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; text-align: right; }
+.exch-res { font-weight: 800; font-size: 17px; white-space: nowrap; }
+.exch-tabla { width: 100%; min-width: 620px; }
+.exch-tabla th, .exch-tabla td { padding: 6px 8px; font-size: 13px; text-align: right; white-space: nowrap; }
+.exch-tabla th:first-child, .exch-tabla td:last-child { text-align: left; }
+.exch-tabla td:last-child { white-space: normal; min-width: 180px; }
+.exch-tabla tr.exch-viejo { opacity: 0.7; }
+@media (max-width: 760px) {
+  .exch-controles { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .exch-checks { grid-column: 1 / -1; padding-top: 0; }
+  .exch-item { flex-direction: column; }
+  .exch-nums { align-items: flex-start; text-align: left; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+}
+html[data-plataforma="celular"] body[data-seccion="sec-exchanges"] #sec-exchanges { display: block; }
+html[data-plataforma="celular"] .exch-controles { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+html[data-plataforma="celular"] .exch-checks { grid-column: 1 / -1; padding-top: 0; }
+html[data-plataforma="celular"] .exch-item { flex-direction: column; }
+html[data-plataforma="celular"] .exch-nums { align-items: center; text-align: left; flex-direction: row; flex-wrap: wrap; gap: 4px 12px; }
+/* Con 6 pestañas, en los celulares más angostos (menos de 360 px) la letra baja un punto para que entren */
+@media (max-width: 359px) { html[data-plataforma="celular"] .pestanas button { font-size: 10px; } }
+
+/* ---------- Opciones de exchange en la calculadora ---------- */
+.opciones-usdt { margin: 2px 0 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.opc-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; justify-content: space-between; }
+.opc-head p { flex: 1 1 260px; }
+.opc-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.opc-item { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.2fr) auto auto; gap: 4px 10px; align-items: center; padding: 6px 8px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); }
+.opc-item.primera { border-color: var(--pos); }
+.opc-item.en-uso { outline: 2px solid var(--accent); outline-offset: -1px; }
+.opc-nombre { font-weight: 600; overflow-wrap: anywhere; }
+.opc-precio { font-variant-numeric: tabular-nums; }
+.opc-rinde { font-weight: 700; white-space: nowrap; border-radius: 999px; padding: 1px 8px; font-size: 12px; }
+.opc-rinde.mejor { color: var(--pos); background: var(--pos-bg); }
+.opc-rinde.peor { color: var(--muted); }
+.opc-rinde.igual { color: var(--muted); }
+.opc-actual { font-size: 13px; }
+.opc-retiro { font-size: 13px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.opc-mas summary { cursor: pointer; font-weight: 600; color: var(--accent); margin: 2px 0 4px; }
+@media (max-width: 560px) {
+  .opc-item { grid-template-columns: minmax(0, 1fr) auto; }
+  .opc-precio { grid-column: 1; }
+  .opc-rinde { grid-column: 1; justify-self: start; }
+  .opc-item .btn { grid-column: 2; grid-row: 1 / span 3; }
+}
+html[data-plataforma="celular"] .opc-item { grid-template-columns: minmax(0, 1fr) auto; }
+html[data-plataforma="celular"] .opc-precio, html[data-plataforma="celular"] .opc-rinde { grid-column: 1; justify-self: start; }
+html[data-plataforma="celular"] .opc-item .btn { grid-column: 2; grid-row: 1 / span 3; }

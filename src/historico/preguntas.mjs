@@ -218,6 +218,7 @@ export function interpretar(texto, hoy) {
 export const EJEMPLOS = [
   '¿Cómo estuvo la brecha oficial cripto los últimos 3 meses?',
   'Consigo el oficial a 1535 y compro USDT al 2 %: ¿cómo salgo si vendo?',
+  '¿Hay arbitraje de USDT entre exchanges?',
   '¿Cuál fue el máximo del blue este año?',
   '¿Cuánto subió el MEP el último mes?',
   'Brecha del CCL contra el MEP en octubre',

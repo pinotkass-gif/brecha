@@ -132,6 +132,7 @@
               <small id="cotizacion-base-src" class="src"></small>
               <small id="cotizacion-base-echo" class="echo"></small>
             </div>
+            <div id="opc-base" class="opciones-usdt" aria-live="polite" hidden></div>
             <div class="field" data-desde="avanzado">
               <label for="aumento">Sumar al precio de compra <span class="unit">%</span></label>
               <input id="aumento" name="aumentoPct" type="text" inputmode="decimal" placeholder="Sin aumento" aria-describedby="aumento-echo">
@@ -150,6 +151,7 @@
               <small id="precio-venta-src" class="src"></small>
               <small id="precio-venta-echo" class="echo"></small>
             </div>
+            <div id="opc-venta" class="opciones-usdt" aria-live="polite" hidden></div>
             <div class="field" id="campo-relacion">
               <label for="conversion"><span id="conversion-pregunta">Cuánto te cobran al pasar de un dólar al otro</span> <span class="unit" id="relacion-unidad">% de lo que pasás</span></label>
               <div class="with-action conversion">
@@ -165,6 +167,7 @@
               <label class="check"><input type="checkbox" id="relacion-hipotesis"> Es una hipótesis (no lo confirmé)</label>
               <small id="relacion-hint" class="hint"></small>
               <small id="conversion-echo" class="echo"></small>
+              <div id="opc-conversion" class="opciones-usdt" aria-live="polite" hidden></div>
             </div>
           </fieldset>
 
@@ -307,6 +310,14 @@
       <div id="hist-comparar" data-desde="avanzado"></div>
       <ul id="hist-lista" class="hist-lista"></ul>
     </section>
+
+    <section aria-labelledby="h-exch" class="block" id="sec-exchanges">
+      <div class="block-head">
+        <h2 id="h-exch">USDT en exchanges</h2>
+        <p class="hint">Compra y venta de USDT en unos 35 exchanges (Binance, Binance P2P, Lemon, Belo, Fiwind, Bybit…) y las mejores combinaciones para arbitrar entre ellos. Sólo simulación: Brecha no opera.</p>
+      </div>
+      <div id="exchanges"></div>
+    </section>
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -315,6 +326,7 @@
   <nav id="pestanas" class="pestanas" aria-label="Secciones">
     <button type="button" data-seccion="sec-simulacion"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M14 11h2M8 15h2M14 15h2"/></svg><span>Calcular</span></button>
     <button type="button" data-seccion="sec-cotizaciones"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 4 7-8"/><path d="M15 8h5v5"/></svg><span>Cotizaciones</span></button>
+    <button type="button" data-seccion="sec-exchanges"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h13l-3-3"/><path d="M19 16H6l3 3"/></svg><span>USDT</span></button>
     <button type="button" data-seccion="sec-preguntar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-8l-4 3v-3H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M8 9h8M8 12h5"/></svg><span>Preguntar</span></button>
     <button type="button" data-seccion="oportunidades" data-desde="avanzado"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg><span>Mercados</span></button>
     <button type="button" data-seccion="historial"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><span>Historial</span></button>
@@ -326,7 +338,7 @@
   </div>
 
   <footer class="foot">
-    <p><strong>Alcance.</strong> Brecha es una simulación matemática. No determina si una operación está habilitada, si hay liquidez para el monto ni si corresponden restricciones cambiarias. Los dólares locales, los dólares cable y los activos cripto no son equivalentes y pueden requerir conversiones adicionales. Cotizaciones: <a href="https://dolarapi.com/docs/argentina/" rel="noopener" target="_blank">DolarAPI</a> (sin afiliación).</p>
+    <p><strong>Alcance.</strong> Brecha es una simulación matemática. No determina si una operación está habilitada, si hay liquidez para el monto ni si corresponden restricciones cambiarias. Los dólares locales, los dólares cable y los activos cripto no son equivalentes y pueden requerir conversiones adicionales. Cotizaciones: <a href="https://dolarapi.com/docs/argentina/" rel="noopener" target="_blank">DolarAPI</a>; USDT por exchange: <a href="https://criptoya.com" rel="noopener" target="_blank">CriptoYa</a> (sin afiliación).</p>
     <p><a id="otra-version" data-otra-version href="#" hidden></a></p>
   </footer>
 </body>
