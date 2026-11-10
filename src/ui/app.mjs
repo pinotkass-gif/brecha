@@ -23,6 +23,7 @@ import { crearChat } from './chat.mjs';
 import { crearExchanges } from './exchanges.mjs';
 import { crearOpcionesUsdt } from './opciones-usdt.mjs';
 import { crearBancos } from './bancos.mjs';
+import { crearInicio } from './inicio.mjs';
 import { conversionComprando, conversionVendiendo } from '../exchanges/arbitraje.mjs';
 import { resumenDeSimple, resumenDeRuta, trazaDeSimple } from '../historial/modelo.mjs';
 import { simularRuta } from '../engine/route.mjs';
@@ -43,6 +44,7 @@ let historial = null;
 let exchanges = null;
 let opcionesUsdt = null;
 let bancos = null;
+let inicio = null;
 const KEY_TEMA = 'brecha.tema.v1';
 const KEY_NIVEL = 'brecha.nivel.v1';
 /** Niveles de uso: cada uno muestra más herramientas. Nada se borra: lo oculto se ve subiendo de nivel. */
@@ -56,7 +58,15 @@ const rangoNivel = (n) => NIVELES_USO.indexOf(n);
 /** Versión: 'celular' (pestañas abajo, compacta) o 'web' (compu). La define index.html (scripts/variantes.mjs). */
 const PLATAFORMA = document.documentElement.dataset.plataforma === 'celular' ? 'celular' : 'web';
 const KEY_SECCION = 'brecha.seccion.v1';
-const SECCIONES = ['sec-simulacion', 'sec-cotizaciones', 'sec-exchanges', 'sec-preguntar', 'oportunidades', 'historial'];
+const SECCIONES = ['sec-inicio', 'sec-simulacion', 'sec-cotizaciones', 'sec-exchanges', 'sec-preguntar', 'oportunidades', 'historial'];
+/** Compu: por pestañas (una sección a la vez, como el celular) o todo junto (la página larga de antes). */
+const KEY_VISTA = 'brecha.pantalla.v1'; // ojo: 'brecha.vista.v1' es la vista de la matriz
+/** La presentación aparece la primera vez; después la app abre en la última pestaña. */
+const KEY_INICIO_VISTO = 'brecha.inicio.visto.v1';
+let vista = PLATAFORMA === 'celular' || storage0().get(KEY_VISTA) !== 'todo' ? 'pestanas' : 'todo';
+const porPestanas = () => PLATAFORMA === 'celular' || vista === 'pestanas';
+/** Lectura previa a crear `storage` (se usa una sola vez, al cargar). */
+function storage0() { return { get(k) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } } }; }
 let nivelUso = 'profesional';
 const INVALIDO = '__invalido__';
 const PROVEEDOR = proveedorPorDefecto;
@@ -843,6 +853,7 @@ function renderTodo() {
   rutas?.alActualizarCotizaciones();
   exchanges?.refrescar(); // los recorridos con dólares usan estas cotizaciones
   bancos?.render(); // "se aleja mucho del oficial" depende de estas cotizaciones
+  inicio?.actualizarDatos();
 }
 
 /* ---------- Modos: calculadora simple / simulador por pasos ---------- */
@@ -1250,6 +1261,15 @@ function cargarRetiro({ valor, cobro }) {
   avisar(`Cargué ${valor} USDT en «Costo de transferencia» (lo que cuesta pasar los USDT de un exchange al otro).`);
 }
 
+/* ---------- Inicio: números en vivo ---------- */
+function resumenInicio() {
+  const v = (id) => precioMercado(id, 'venta');
+  const pesos = (x) => `$ ${formatNumberAR(x, { decimals: 2, minDecimals: 0 })}`;
+  const filas = [['Oficial', 'oficial'], ['Blue', 'blue'], ['MEP', 'mep'], ['Cripto', 'cripto']].filter(([, id]) => v(id)).map(([nombre, id]) => ({ nombre, valor: pesos(v(id)) }));
+  if (v('oficial') && v('cripto')) filas.push({ nombre: 'Brecha cripto', valor: formatPct(toDec(v('cripto')).div(toDec(v('oficial'))).minus(1).times(100)), clase: 'brecha' });
+  return filas;
+}
+
 /* ---------- Matriz → simuladores ---------- */
 function irASimulacion() {
   mostrarSeccion('sec-simulacion');
@@ -1258,7 +1278,7 @@ function irASimulacion() {
 
 /* ---------- Versión celular: una sección a la vez, con pestañas abajo ---------- */
 function mostrarSeccion(id) {
-  if (PLATAFORMA !== 'celular') return;
+  if (!porPestanas()) return;
   let s = SECCIONES.includes(id) ? id : 'sec-simulacion';
   if (s === 'oportunidades' && rangoNivel(nivelUso) < 1) s = 'sec-simulacion'; // la matriz es del nivel Avanzado
   const cambio = document.body.dataset.seccion !== s;
@@ -1266,9 +1286,26 @@ function mostrarSeccion(id) {
   for (const b of document.querySelectorAll('#pestanas [data-seccion]')) {
     if (b.dataset.seccion === s) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   }
-  storage.set(KEY_SECCION, s);
+  if (s === 'sec-inicio') storage.set(KEY_INICIO_VISTO, true); else storage.set(KEY_SECCION, s); // Inicio nunca queda como "última pestaña"
   if (cambio) window.scrollTo(0, 0);
+  if (s === 'sec-inicio') inicio?.mostrar(); else inicio?.ocultar();
   if (s === 'sec-cotizaciones' && $('#calidad-cot').open) renderCalidad();
+  actualizarBarra();
+}
+/** Última pestaña de trabajo (para «Saltar»). */
+const ultimaSeccion = () => { const g = storage.get(KEY_SECCION); return SECCIONES.includes(g) && g !== 'sec-inicio' ? g : 'sec-simulacion'; };
+/** Compu: por pestañas o todo junto. */
+function aplicarVista(v, { inicial = null } = {}) {
+  vista = PLATAFORMA === 'celular' || v !== 'todo' ? 'pestanas' : 'todo';
+  if (PLATAFORMA === 'web') storage.set(KEY_VISTA, vista);
+  document.documentElement.classList.toggle('por-pestanas', porPestanas());
+  const b = $('#btn-vista');
+  b.textContent = vista === 'todo' ? 'Ver por pestañas' : 'Ver todo junto';
+  b.setAttribute('aria-pressed', String(vista === 'todo'));
+  if (porPestanas()) {
+    const actual = document.body.dataset.seccion;
+    mostrarSeccion(inicial ?? (SECCIONES.includes(actual) ? actual : ultimaSeccion()));
+  } else inicio?.ocultar();
   actualizarBarra();
 }
 function bindPestanas() {
@@ -1276,6 +1313,16 @@ function bindPestanas() {
     const b = ev.target.closest('[data-seccion]');
     if (b) mostrarSeccion(b.dataset.seccion);
   });
+  // Botones que llevan a una pestaña (Inicio, «Saltar», las partes de la presentación)
+  document.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-ir]');
+    if (!b) return;
+    const destino = b.dataset.ir === 'ultima' ? ultimaSeccion() : b.dataset.ir;
+    if (!SECCIONES.includes(destino)) return;
+    if (!porPestanas()) aplicarVista('pestanas');
+    mostrarSeccion(destino);
+  });
+  $('#btn-vista').addEventListener('click', () => aplicarVista(vista === 'todo' ? 'pestanas' : 'todo'));
   // Link a la otra versión (celular ↔ compu), relativo a la raíz de la app
   const otra = document.documentElement.dataset.otra;
   for (const a of document.querySelectorAll('[data-otra-version]')) {
@@ -1283,7 +1330,8 @@ function bindPestanas() {
     a.href = otra;
     if (a.id === 'otra-version') { a.textContent = PLATAFORMA === 'celular' ? 'Abrir la versión para compu' : 'Abrir la versión celular'; a.hidden = false; }
   }
-  if (PLATAFORMA === 'celular') mostrarSeccion(storage.get(KEY_SECCION) ?? 'sec-simulacion');
+  // La primera vez, la presentación; después, la última pestaña de trabajo
+  aplicarVista(vista, { inicial: storage.get(KEY_INICIO_VISTO) ? ultimaSeccion() : 'sec-inicio' });
 }
 /** Publicada (https): un service worker guarda la app para abrirla sin internet. En la compu local no se usa. */
 function registrarSinConexion() {
@@ -1313,7 +1361,7 @@ function actualizarBarra() {
   if (!barra) return;
   const res = resultadoActivo();
   const angosto = PLATAFORMA === 'celular' || window.matchMedia('(max-width: 860px)').matches;
-  const fueraDeCalcular = PLATAFORMA === 'celular' && document.body.dataset.seccion && document.body.dataset.seccion !== 'sec-simulacion';
+  const fueraDeCalcular = porPestanas() && document.body.dataset.seccion && document.body.dataset.seccion !== 'sec-simulacion';
   const nivel = res.dataset.nivel;
   const tituloEl = res.querySelector('.headline .res-title')?.cloneNode(true);
   tituloEl?.querySelectorAll('.badge').forEach((b) => b.remove());
@@ -1372,7 +1420,9 @@ function nivelInicial() {
   const g = storage.get(KEY_NIVEL);
   if (NIVELES_USO.includes(g)) return g;
   try {
-    for (let i = 0; i < localStorage.length; i++) if (localStorage.key(i)?.startsWith('brecha.')) return 'profesional';
+    // Haber visto la presentación o elegir cómo se ve la compu no es "haber usado Brecha"
+    const deVista = new Set([KEY_INICIO_VISTO, KEY_VISTA]);
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k?.startsWith('brecha.') && !deVista.has(k)) return 'profesional'; }
   } catch { /* sin almacenamiento */ }
   return 'rapido';
 }
@@ -1382,7 +1432,7 @@ function aplicarNivel(n) {
   storage.set(KEY_NIVEL, nivelUso);
   for (const b of document.querySelectorAll('#nivel-uso [data-nivel-uso]')) b.setAttribute('aria-pressed', String(b.dataset.nivelUso === nivelUso));
   $('#nivel-desc').textContent = NIVEL_UI[nivelUso].d;
-  if (PLATAFORMA === 'celular' && nivelUso === 'rapido' && document.body.dataset.seccion === 'oportunidades') mostrarSeccion('sec-simulacion');
+  if (porPestanas() && nivelUso === 'rapido' && document.body.dataset.seccion === 'oportunidades') mostrarSeccion('sec-simulacion');
   if (rangoNivel(nivelUso) < 2) {
     if (!$('#panel-rutas').hidden) cambiarModo('simple');
     if ($('[data-vista="ranking"]')?.getAttribute('aria-pressed') === 'true') $('[data-vista="bruta"]').click();
@@ -1532,6 +1582,10 @@ function init() {
       avisar(`${d.detalle}. Los costos de ese lado quedaron como «no aplica» para no cobrarlos dos veces.${d.incompleto ? ' Ojo: el cálculo con bonos tenía costos en «No sé».' : ''}`);
     },
     aplicarRuta: (d) => rutas.aplicarBonos(d),
+  });
+  inicio = crearInicio({
+    root: $('#sec-inicio'), plataforma: PLATAFORMA, getResumen: resumenInicio,
+    alturaArriba: () => (PLATAFORMA === 'web' && porPestanas() ? $('#pestanas').offsetHeight : 0),
   });
   bindModos();
   bindBarra();

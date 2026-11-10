@@ -14,6 +14,12 @@
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mostrar); else mostrar();
     };
     window.addEventListener('error', function () { if (!window.brechaLista) window.brechaFallo(); });
+    // Pestañas o todo junto: se decide antes de pintar para que no aparezca todo y después se acomode.
+    (function () {
+      var h = document.documentElement, todo = false;
+      try { todo = JSON.parse(localStorage.getItem('brecha.pantalla.v1')) === 'todo'; } catch (e) { /* sin almacenamiento */ }
+      if (h.dataset.plataforma === 'celular' || !todo) h.classList.add('por-pestanas');
+    })();
   </script>
   <script type="module" src="src/ui/app.mjs" onerror="brechaFallo()"></script>
   <link rel="manifest" href="src/pwa/manifest.webmanifest">
@@ -26,9 +32,18 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
 </head>
 <body>
+  <script>
+    (function () {
+      var leer = function (k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
+      if (!document.documentElement.classList.contains('por-pestanas')) return;
+      var s = leer('brecha.inicio.visto.v1') ? leer('brecha.seccion.v1') : 'sec-inicio';
+      if (typeof s === 'string' && /^[a-z-]{1,30}$/.test(s)) document.body.dataset.seccion = s;
+    })();
+  </script>
   <header class="top">
     <div class="brand">
       <h1>Brecha</h1>
+      <button type="button" class="btn ghost small ir-inicio" data-ir="sec-inicio" aria-label="Ver la presentación de Brecha">Presentación</button>
       <p>Simulador cambiario personal · sólo simulación</p>
     </div>
     <div class="nivel-uso">
@@ -42,6 +57,7 @@
     <div class="top-actions">
       <button id="btn-actualizar" type="button" class="btn primary">Actualizar cotizaciones</button>
       <button id="btn-tema" type="button" class="btn ghost small" aria-label="Tema: automático">◐ Auto</button>
+      <button id="btn-vista" type="button" class="btn ghost small">Ver todo junto</button>
       <p id="estado-consulta" class="status" role="status" aria-live="polite"></p>
     </div>
   </header>
@@ -50,7 +66,73 @@
   <div id="fallo-arranque" class="banner" role="alert" hidden><p><strong>Brecha no pudo arrancar</strong>: no se cargó una parte de la app. Recargá la página (F5). Tus simulaciones guardadas no se pierden.</p></div>
   <div id="aviso-manuales" class="banner" role="status" hidden></div>
 
+  <!-- Pestañas: en la compu, fijas arriba; en el celular, abajo («Todo junto» en la compu las saca) -->
+  <nav id="pestanas" class="pestanas" aria-label="Secciones">
+    <button type="button" data-seccion="sec-inicio" class="pestana-inicio"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.6L20 9.4l-4 4 1 5.6-5-2.8-5 2.8 1-5.6-4-4 5.4-.8z"/></svg><span>Inicio</span></button>
+    <button type="button" data-seccion="sec-simulacion"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M14 11h2M8 15h2M14 15h2"/></svg><span>Calcular</span></button>
+    <button type="button" data-seccion="sec-cotizaciones"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 4 7-8"/><path d="M15 8h5v5"/></svg><span>Cotizaciones</span></button>
+    <button type="button" data-seccion="sec-exchanges"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h13l-3-3"/><path d="M19 16H6l3 3"/></svg><span>USDT</span></button>
+    <button type="button" data-seccion="sec-preguntar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-8l-4 3v-3H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M8 9h8M8 12h5"/></svg><span>Preguntar</span></button>
+    <button type="button" data-seccion="oportunidades" data-desde="avanzado"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg><span>Mercados</span></button>
+    <button type="button" data-seccion="historial"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><span>Historial</span></button>
+  </nav>
+
   <main>
+    <section id="sec-inicio" class="inicio" aria-labelledby="h-inicio" data-inicio="parado">
+      <canvas class="inicio-canvas" aria-hidden="true"></canvas>
+      <div class="inicio-fondo" aria-hidden="true"></div>
+      <div class="inicio-cursor inicio-cursor-adentro" aria-hidden="true"></div>
+      <div class="inicio-cursor inicio-cursor-afuera" aria-hidden="true"></div>
+      <div class="inicio-grilla" aria-hidden="true">
+        <div class="inicio-linea-h"></div>
+        <div class="inicio-lineas">
+          <div class="inicio-linea"><i class="inicio-punto"></i><i class="inicio-punto"></i></div>
+          <div class="inicio-linea"><i class="inicio-punto"></i><i class="inicio-punto"></i></div>
+          <div class="inicio-linea"><i class="inicio-punto"></i><i class="inicio-punto"></i></div>
+          <div class="inicio-linea"><i class="inicio-punto"></i><i class="inicio-punto"></i></div>
+          <div class="inicio-linea"><i class="inicio-punto"></i><i class="inicio-punto"></i></div>
+        </div>
+      </div>
+      <div class="inicio-capa">
+        <div class="inicio-cabeza">
+          <span class="inicio-marca">Brecha</span>
+          <button type="button" class="inicio-saltar" data-ir="ultima">Saltar <span class="inicio-circulo" aria-hidden="true"></span></button>
+        </div>
+        <nav class="inicio-progreso" aria-label="Partes de la presentación">
+          <button type="button" data-parte="0" aria-label="1: Brecha"><span class="inicio-dash"><span class="inicio-dash-lleno"></span></span></button>
+          <button type="button" data-parte="1" aria-label="2: Cotizaciones"><span class="inicio-dash"><span class="inicio-dash-lleno"></span></span></button>
+          <button type="button" data-parte="2" aria-label="3: USDT en exchanges"><span class="inicio-dash"><span class="inicio-dash-lleno"></span></span></button>
+          <button type="button" data-parte="3" aria-label="4: Calcular y preguntar"><span class="inicio-dash"><span class="inicio-dash-lleno"></span></span></button>
+        </nav>
+        <article class="inicio-parte" id="inicio-1">
+          <h2 class="inicio-titulo" id="h-inicio">Brecha</h2>
+          <p class="inicio-bajada">Tu simulador cambiario personal</p>
+          <div class="inicio-cols">
+            <p class="inicio-texto">Oficial, blue, MEP, CCL y cripto en un solo lugar. Cuánto ganás o perdés pasando de un dólar a otro, con todos los costos y sin inventar ningún número.</p>
+            <p class="inicio-texto">Cotizaciones en vivo, bancos, 35 exchanges de USDT y un chat que entiende cómo hablás: «consigo el oficial a 1535 y compro USDT al 2 %».</p>
+          </div>
+          <dl class="inicio-datos" id="inicio-datos"></dl>
+          <div class="inicio-acciones"><button type="button" class="inicio-btn" data-ir="sec-simulacion">Calcular</button><button type="button" class="inicio-btn ghost" data-ir="sec-cotizaciones">Cotizaciones</button></div>
+        </article>
+        <article class="inicio-parte" id="inicio-2">
+          <h2 class="inicio-titulo">Cada <br>cotización</h2>
+          <p class="inicio-texto">Oficial, blue, MEP, CCL y cripto de DolarAPI, con su hora y su fuente. Nación al día y Galicia como la cargues vos («galicia 1535»). Un dato viejo nunca se usa como si fuera de hoy.</p>
+          <div class="inicio-acciones"><button type="button" class="inicio-btn" data-ir="sec-cotizaciones">Ver cotizaciones</button></div>
+        </article>
+        <article class="inicio-parte" id="inicio-3">
+          <h2 class="inicio-titulo">USDT <br>en vivo</h2>
+          <p class="inicio-texto">35 exchanges con CriptoYa: dónde comprar más barato, dónde vender más caro y el arbitraje entre ellos, con la comisión de retiro de cada red.</p>
+          <div class="inicio-acciones"><button type="button" class="inicio-btn" data-ir="sec-exchanges">Ver USDT</button></div>
+        </article>
+        <article class="inicio-parte" id="inicio-4">
+          <h2 class="inicio-titulo">Calculá <br>y preguntá</h2>
+          <p class="inicio-texto">La calculadora con comisiones, impuestos y transferencias, la matriz de mercados y el chat: «galicia 1535», «¿hay arbitraje de USDT?». Sólo simulación: Brecha no opera.</p>
+          <div class="inicio-acciones"><button type="button" class="inicio-btn" data-ir="sec-simulacion">Empezar a calcular</button><button type="button" class="inicio-btn ghost" data-ir="sec-preguntar">Preguntar</button></div>
+        </article>
+      </div>
+      <div class="inicio-recorrido" aria-hidden="true"></div>
+    </section>
+
     <section aria-labelledby="h-cot" class="block" id="sec-cotizaciones">
       <div class="block-head">
         <h2 id="h-cot">Cotizaciones de referencia</h2>
@@ -323,15 +405,7 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <!-- Versión celular: pestañas abajo (en la versión web no se muestran) -->
-  <nav id="pestanas" class="pestanas" aria-label="Secciones">
-    <button type="button" data-seccion="sec-simulacion"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M14 11h2M8 15h2M14 15h2"/></svg><span>Calcular</span></button>
-    <button type="button" data-seccion="sec-cotizaciones"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 4 7-8"/><path d="M15 8h5v5"/></svg><span>Cotizaciones</span></button>
-    <button type="button" data-seccion="sec-exchanges"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h13l-3-3"/><path d="M19 16H6l3 3"/></svg><span>USDT</span></button>
-    <button type="button" data-seccion="sec-preguntar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-8l-4 3v-3H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M8 9h8M8 12h5"/></svg><span>Preguntar</span></button>
-    <button type="button" data-seccion="oportunidades" data-desde="avanzado"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg><span>Mercados</span></button>
-    <button type="button" data-seccion="historial"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><span>Historial</span></button>
-  </nav>
+
 
   <div id="barra-resultado" class="barra" hidden>
     <p id="barra-texto" aria-live="off"></p>

@@ -482,13 +482,17 @@ html[data-plataforma="celular"] .status { flex-basis: 100%; font-size: 12px; }
 html[data-plataforma="celular"] main { padding-top: 0; }
 html[data-plataforma="celular"] .block { margin-top: 14px; }
 
-/* Una sección a la vez (Calcular si todavía no se eligió) */
-html[data-plataforma="celular"] main > section { display: none; }
-html[data-plataforma="celular"] body:not([data-seccion]) #sec-simulacion,
-html[data-plataforma="celular"] body[data-seccion="sec-simulacion"] #sec-simulacion,
-html[data-plataforma="celular"] body[data-seccion="sec-cotizaciones"] #sec-cotizaciones,
-html[data-plataforma="celular"] body[data-seccion="oportunidades"] #oportunidades,
-html[data-plataforma="celular"] body[data-seccion="historial"] #historial { display: block; }
+/* Una sección a la vez: celular siempre, compu por pestañas (salvo «Ver todo junto»). Calcular si todavía no se eligió */
+html.por-pestanas main > section { display: none; }
+html.por-pestanas body:not([data-seccion]) #sec-simulacion,
+html.por-pestanas body[data-seccion="sec-simulacion"] #sec-simulacion,
+html.por-pestanas body[data-seccion="sec-cotizaciones"] #sec-cotizaciones,
+html.por-pestanas body[data-seccion="oportunidades"] #oportunidades,
+html.por-pestanas body[data-seccion="historial"] #historial,
+html.por-pestanas body[data-seccion="sec-preguntar"] #sec-preguntar,
+html.por-pestanas body[data-seccion="sec-exchanges"] #sec-exchanges,
+html.por-pestanas body[data-seccion="sec-inicio"] #sec-inicio { display: block; }
+html:not(.por-pestanas) #sec-inicio { display: none; }
 
 /* Una columna aunque la pantalla sea ancha (la versión celular abierta en una compu queda como una columna centrada) */
 html[data-plataforma="celular"] .sim-grid,
@@ -558,7 +562,6 @@ html[data-plataforma="celular"] .foot { padding-inline: max(16px, env(safe-area-
 .chat-form input { flex: 1 1 auto; }
 .chat-form .btn { flex: none; }
 .chat-pie { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
-html[data-plataforma="celular"] body[data-seccion="sec-preguntar"] #sec-preguntar { display: block; }
 
 /* ---------- USDT en exchanges ---------- */
 .exch-controles { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 220px) minmax(0, 1fr); gap: 10px 14px; align-items: start; }
@@ -589,7 +592,6 @@ html[data-plataforma="celular"] body[data-seccion="sec-preguntar"] #sec-pregunta
   .exch-item { flex-direction: column; }
   .exch-nums { align-items: flex-start; text-align: left; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
 }
-html[data-plataforma="celular"] body[data-seccion="sec-exchanges"] #sec-exchanges { display: block; }
 html[data-plataforma="celular"] .exch-controles { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 html[data-plataforma="celular"] .exch-checks { grid-column: 1 / -1; padding-top: 0; }
 html[data-plataforma="celular"] .exch-item { flex-direction: column; }
@@ -635,3 +637,105 @@ html[data-plataforma="celular"] .opc-item .btn { grid-column: 2; grid-row: 1 / s
 .opc-item.sin-dato { opacity: 0.85; }
 @media (max-width: 860px) { .cards.bancos-cards { grid-template-columns: minmax(0, 1fr); } }
 html[data-plataforma="celular"] .cards.bancos-cards { grid-template-columns: minmax(0, 1fr); }
+
+/* ---------- Pestañas arriba en la compu ---------- */
+.ir-inicio { margin-left: 6px; }
+html[data-plataforma="web"] .ir-inicio { display: none; }
+html[data-plataforma="celular"] #btn-vista, html[data-plataforma="celular"] .pestana-inicio { display: none; }
+html[data-plataforma="web"].por-pestanas .pestanas {
+  display: flex; flex-wrap: wrap; gap: 4px; position: sticky; top: 0; z-index: 30;
+  padding: 6px max(16px, calc((100% - 1200px) / 2 + 16px));
+  background: color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+html[data-plataforma="web"] .pestanas button { flex-direction: row; min-height: 40px; padding: 6px 12px; font-size: 14px; gap: 6px; }
+html[data-plataforma="web"] .pestanas svg { width: 18px; height: 18px; }
+
+/* ---------- Inicio: la presentación (siempre oscura, independiente del tema) ---------- */
+html.por-pestanas body[data-seccion="sec-inicio"] { background: #000; }
+html.por-pestanas body[data-seccion="sec-inicio"] :is(header.top, .foot, #sugerir-celular, #aviso-manuales, #fallo-arranque:not([hidden]), #barra-resultado) { display: none !important; }
+html.por-pestanas body[data-seccion="sec-inicio"] main { max-width: none; padding: 0; }
+html.por-pestanas body[data-seccion="sec-inicio"] .pestanas { background: rgb(0 0 0 / 55%); border-color: rgb(255 255 255 / 12%); box-shadow: none; }
+html.por-pestanas body[data-seccion="sec-inicio"] .pestanas button { color: rgb(255 255 255 / 70%); }
+html.por-pestanas body[data-seccion="sec-inicio"] .pestanas button[aria-current="page"] { color: #7cc4ff; background: rgb(124 196 255 / 12%); }
+.inicio { --alto-arriba: 0px; position: relative; margin: 0; color: #fff; font-family: 'Outfit', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.inicio-canvas, .inicio-fondo { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+.inicio-canvas { z-index: 0; outline: none; }
+.inicio-fondo { z-index: 0; background: radial-gradient(ellipse at 50% 42%, #0d2547 0%, #050a14 55%, #000 100%); }
+.inicio-canvas.lista + .inicio-fondo { display: none; }
+.inicio-recorrido { height: 700vh; }
+.inicio-capa { position: fixed; top: var(--alto-arriba); left: 0; right: 0; bottom: 0; z-index: 3; pointer-events: none; padding: 0 60px 40px; }
+.inicio-cabeza { display: flex; justify-content: space-between; align-items: center; padding: 18px 0; pointer-events: auto; }
+.inicio-marca { font-size: 14px; font-weight: 600; letter-spacing: 5px; text-transform: uppercase; }
+.inicio-saltar, .inicio-btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 10px 22px; border-radius: 999px; cursor: pointer;
+  background: #fff; color: #000; border: 1px solid #fff; font: 600 11px/1 'Outfit', system-ui, sans-serif; letter-spacing: 1.5px; text-transform: uppercase;
+  transition: transform 0.3s, background 0.3s;
+}
+.inicio-saltar:hover, .inicio-btn:hover { transform: scale(1.05); background: #e8f4ff; }
+.inicio-btn.ghost { background: transparent; color: #fff; border-color: rgb(255 255 255 / 55%); }
+.inicio-btn.ghost:hover { background: rgb(255 255 255 / 10%); }
+.inicio-circulo { width: 6px; height: 6px; border: 1px solid #000; border-radius: 50%; }
+.inicio-parte { position: absolute; bottom: 10%; left: 60px; right: 60px; visibility: hidden; pointer-events: none; transition: visibility 0s linear 0.9s; }
+.inicio-parte.activa { visibility: visible; pointer-events: auto; transition-delay: 0s; }
+.inicio-parte :is(.inicio-titulo, .inicio-texto, .inicio-bajada, .inicio-datos) { text-shadow: 0 2px 18px rgb(0 0 0 / 75%), 0 0 2px rgb(0 0 0 / 60%); }
+#inicio-2 { left: calc(25vw + 20px); }
+#inicio-3 { left: calc(50vw + 10px); }
+#inicio-4 { left: calc(25vw + 20px); }
+.inicio-titulo { font-family: 'Italiana', 'Didot', 'Bodoni 72', 'Playfair Display', Georgia, serif; font-size: clamp(64px, 8vw, 116px); line-height: 1; font-weight: 400; letter-spacing: 2px; color: #eef6ff; margin-bottom: 18px; }
+.inicio-titulo .letra { display: inline-block; opacity: 0; transform: translateY(50px); filter: blur(12px); transition: opacity 0.8s cubic-bezier(0.25, 1, 0.5, 1), transform 0.8s cubic-bezier(0.25, 1, 0.5, 1), filter 0.8s cubic-bezier(0.25, 1, 0.5, 1); }
+.inicio-parte.activa .inicio-titulo .letra { opacity: 1; transform: none; filter: none; }
+.inicio-bajada, .inicio-texto, .inicio-datos, .inicio-acciones { opacity: 0; transform: translateY(30px); transition: opacity 0.8s cubic-bezier(0.25, 1, 0.5, 1) 0.4s, transform 0.8s cubic-bezier(0.25, 1, 0.5, 1) 0.4s; }
+.inicio-parte.activa :is(.inicio-bajada, .inicio-texto, .inicio-datos, .inicio-acciones) { opacity: 1; transform: none; }
+.inicio-bajada { font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: #7cc4ff; margin: -6px 0 18px; }
+.inicio-cols { display: flex; gap: 40px; }
+.inicio-texto { font-size: 16px; line-height: 1.7; font-weight: 300; color: #cfd8e3; letter-spacing: 0.3px; max-width: max(280px, calc(25vw - 40px)); }
+.inicio-datos { display: flex; flex-wrap: wrap; gap: 10px 28px; margin: 22px 0 0; font-size: 13px; }
+.inicio-datos:empty { display: none; }
+.inicio-datos div { display: flex; flex-direction: column; gap: 2px; }
+.inicio-datos dt { color: #8aa0b8; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; }
+.inicio-datos dd { margin: 0; font-size: 18px; font-weight: 600; color: #fff; font-variant-numeric: tabular-nums; }
+.inicio-datos dd.brecha { color: #7cc4ff; }
+.inicio-acciones { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+.inicio-progreso { position: absolute; right: 34px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 6px; pointer-events: auto; }
+.inicio-progreso button { background: none; border: 0; padding: 4px 8px; cursor: pointer; }
+.inicio-dash { display: block; width: 2px; height: 40px; background: rgb(255 255 255 / 15%); border-radius: 2px; overflow: hidden; }
+.inicio-dash-lleno { display: block; width: 100%; height: 0%; background: #fff; }
+.inicio-grilla { position: fixed; inset: var(--alto-arriba) 0 0 0; z-index: 2; pointer-events: none; }
+.inicio-linea-h { position: absolute; top: 64px; left: 0; right: 0; height: 1px; background: rgb(255 255 255 / 10%); }
+.inicio-lineas { position: absolute; inset: 0 40px; display: flex; justify-content: space-between; }
+.inicio-linea { position: relative; width: 1px; height: 100%; background: rgb(255 255 255 / 10%); }
+.inicio-linea:nth-child(3) { margin-top: 64px; height: calc(100% - 64px); }
+.inicio-punto { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; border-radius: 50%; transform: translate(-50%, -50%); background: rgb(124 196 255 / 45%); box-shadow: 0 0 6px rgb(124 196 255 / 35%); }
+.inicio-cursor { display: none; position: fixed; top: 0; left: 0; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+html.cursor-inicio .inicio-cursor { display: block; }
+html.cursor-inicio #sec-inicio, html.cursor-inicio #sec-inicio * { cursor: none !important; }
+.inicio-cursor-adentro { width: 6px; height: 6px; border: 2px solid #fff; z-index: 61; }
+.inicio-cursor-afuera { width: 40px; height: 40px; border: 1.5px solid rgb(255 255 255 / 70%); z-index: 60; }
+/* Sin 3D (el navegador no tiene WebGL): fondo azul y los textos igual */
+.inicio[data-tres="no"] .inicio-canvas { display: none; }
+/* «Reducir movimiento»: una imagen quieta y las cuatro partes una debajo de la otra */
+.inicio[data-modo="quieto"] .inicio-recorrido, .inicio[data-modo="quieto"] .inicio-progreso, .inicio[data-modo="quieto"] .inicio-grilla { display: none; }
+.inicio[data-modo="quieto"] .inicio-capa { position: relative; top: auto; padding-bottom: 60px; }
+.inicio[data-modo="quieto"] .inicio-parte { position: relative; left: auto; right: auto; bottom: auto; visibility: visible; pointer-events: auto; margin: 48px 0 0; }
+.inicio[data-modo="quieto"] :is(.letra, .inicio-bajada, .inicio-texto, .inicio-datos, .inicio-acciones) { opacity: 1; transform: none; filter: none; transition: none; }
+@media (max-width: 860px) {
+  .inicio-capa { padding: 0 20px 28px; }
+  .inicio-parte, #inicio-2, #inicio-3, #inicio-4 { left: 20px; right: 20px; bottom: 6%; }
+  .inicio-cols { flex-direction: column; gap: 10px; }
+  .inicio-texto { max-width: 560px; font-size: 15px; }
+  .inicio-grilla { display: none; }
+  .inicio-progreso { right: 6px; }
+}
+html[data-plataforma="celular"] .inicio-recorrido { height: 500vh; }
+html[data-plataforma="celular"] .inicio-capa { padding: max(4px, env(safe-area-inset-top, 0px)) 18px calc(var(--alto-pestanas) + env(safe-area-inset-bottom, 0px) + 18px); }
+html[data-plataforma="celular"] :is(.inicio-parte, #inicio-2, #inicio-3, #inicio-4) { left: 18px; right: 30px; bottom: calc(var(--alto-pestanas) + env(safe-area-inset-bottom, 0px) + 18px); }
+html[data-plataforma="celular"] .inicio-titulo { font-size: 56px; margin-bottom: 12px; }
+html[data-plataforma="celular"] .inicio-texto { font-size: 14px; line-height: 1.6; }
+html[data-plataforma="celular"] .inicio-datos { gap: 8px 18px; }
+html[data-plataforma="celular"] .inicio-datos dd { font-size: 16px; }
+html[data-plataforma="celular"] .inicio-grilla { display: none; }
+html[data-plataforma="celular"] body[data-seccion="sec-inicio"] .pestanas { background: rgb(0 0 0 / 80%); }
+@media (prefers-reduced-motion: reduce) {
+  .inicio-titulo .letra, .inicio-bajada, .inicio-texto, .inicio-datos, .inicio-acciones { transition: none; }
+}
