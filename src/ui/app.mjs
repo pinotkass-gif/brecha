@@ -11,6 +11,7 @@ import { proveedorPorDefecto } from '../quotes/providers/index.mjs';
 import { consultarConReintentos, puedeConsultar, POLITICA_CONSULTA } from '../quotes/cliente.mjs';
 import { clasificar, restaurarPolitica, POLITICA_FRESCURA_DEFECTO, HORAS_MAXIMAS } from '../quotes/frescura.mjs';
 import { textoProblema } from '../quotes/calidad.mjs';
+import { KEY_CALLE, restaurarCalle, leerCalle, avisoCalle } from '../quotes/calle.mjs';
 import { estadoInicial, aplicarRespuesta, editarManual, editarFuenteManual, volverAAPI, manuales, restaurar } from '../quotes/store.mjs';
 import { crearSimuladorRutas } from './rutas.mjs';
 import { crearOportunidades } from './oportunidades.mjs';
@@ -59,7 +60,7 @@ const rangoNivel = (n) => NIVELES_USO.indexOf(n);
 const PLATAFORMA = document.documentElement.dataset.plataforma === 'celular' ? 'celular' : 'web';
 const KEY_SECCION = 'brecha.seccion.v1';
 const SECCIONES = ['sec-inicio', 'sec-simulacion', 'sec-cotizaciones', 'sec-preguntar', 'oportunidades', 'historial'];
-/** Calculadora con lo justo para la operativa del propietario (pesos → USD → USDT → pesos) o completa. */
+/** Calculadora con lo justo para la operativa del propietario (pesos → billete → USDT → pesos; 12/11/2026) o completa. */
 const KEY_OPERATIVA = 'brecha.operativa.v1';
 let operativa = 'completa'; // se decide en init
 /** Compu: por pestañas (una sección a la vez, como el celular) o todo junto (la página larga de antes). */
@@ -94,6 +95,7 @@ const storage = {
 
 /* ---------- Estado ---------- */
 let cot = restaurar(storage.get(KEY_COT));
+let calle = restaurarCalle(storage.get(KEY_CALLE)); // blue de la calle que cargó él (o null)
 let politica = restaurarPolitica(storage.get(KEY_POLITICA));
 const KEY_CAL = 'brecha.calendario.v1';
 const KEY_CONTRASTE = 'brecha.contraste.v1';
@@ -436,7 +438,7 @@ function actualizarEtiquetas() {
   const simple = operativa === 'simple';
   $('#conversion-pregunta').textContent = simple ? 'Qué % en USD te cobran los USDT' : mismo ? 'Conversión' : `¿Cuánto te cobran por pasar de ${na} a ${nb}?`;
   $('#relacion-unidad').textContent = simple ? '% arriba del dólar (obligatorio)' : mismo ? 'no hace falta: comprás y vendés el mismo dólar' : `${UNIDAD_SENTIDO[$('#conversion-sentido').value] ?? UNIDAD_SENTIDO.cobran} (obligatorio)`;
-  $('#relacion-hint').textContent = simple ? 'Lo que pagás de más por cada USDT, en dólares. Por ejemplo 2 = cada USDT te sale 1,02 dólares. Si te los dan 1 a 1, poné 0.' : mismo
+  $('#relacion-hint').textContent = simple ? 'Lo que pagás de más por cada USDT, en dólares billete. Por ejemplo 2 = cada USDT te sale 1,02 dólares. Si te los dan 1 a 1, poné 0.' : mismo
     ? ''
     : `Comprás ${a.instrumento} y vendés ${b.instrumento}: no son lo mismo, y pasar de uno al otro suele tener un costo. Cargá el % que te cobran en esa operación (por ejemplo 1,5) o, si pagás cada ${b.unidad} más caro que el ${a.unidad} (por ejemplo el oficial + 2 %), elegí «Pagás más caro». Si no te cobran nada, poné 0. Si no lo sabés, no hay resultado; podés probar sin costo marcándolo como hipótesis.`;
   for (const id of ['otros-cobro', 'transf-cobro']) {
@@ -452,7 +454,7 @@ function sincronizarPrecios() {
   const c = $('#mercado-compra').value;
   const v = $('#mercado-venta').value;
   if (!sim.overrideBase) {
-    const p = precioMercado(c, 'venta');
+    const p = c === 'blue' && calle ? toDec(calle.venta) : precioMercado(c, 'venta');
     $('#cotizacion-base').value = p ? formatQuote(p) : '';
   }
   if (!sim.overrideVenta) {
@@ -463,6 +465,30 @@ function sincronizarPrecios() {
   $('#reset-venta').hidden = !sim.overrideVenta;
   $('#cotizacion-base-src').textContent = textoFuente(c, 'venta', sim.overrideBase);
   $('#precio-venta-src').textContent = textoFuente(v, 'compra', sim.overrideVenta);
+  renderCalle();
+}
+
+/** Recuadro «Tu blue de la calle»: se ve cuando comprás blue. */
+function renderCalle() {
+  const caja = $('#blue-calle');
+  const ver = $('#mercado-compra').value === 'blue';
+  caja.hidden = !ver;
+  if (!ver) return;
+  const api = precioMercado('blue', 'venta');
+  const apiTxt = api ? formatARS(api) : 'sin dato';
+  if (document.activeElement !== $('#blue-calle-precio')) $('#blue-calle-precio').value = calle ? formatQuote(toDec(calle.venta)) : '';
+  $('#blue-calle-quitar').hidden = !calle;
+  const aviso = calle ? avisoCalle(calle, api) : null;
+  $('#blue-calle-estado').textContent = calle
+    ? `Usando tu blue de la calle: ${formatARS(toDec(calle.venta))} (lo cargaste el ${fecha(calle.at)}). Blue en DolarAPI: ${apiTxt}.${aviso ? ` ${aviso}` : ''}`
+    : `Ahora usa el blue de DolarAPI (${apiTxt}). Si en la calle conseguís el billete a otro precio, cargalo acá: queda guardado para la próxima.`;
+}
+function guardarCalle(nuevo) {
+  calle = nuevo;
+  storage.set(KEY_CALLE, calle);
+  if ($('#mercado-compra').value === 'blue') { sim.overrideBase = false; delete sim.exch.base; if (sim.guardada) sim.guardada.base = false; }
+  sincronizarPrecios();
+  recalcular();
 }
 
 function textoFuente(id, punta, override) {
@@ -473,6 +499,7 @@ function textoFuente(id, punta, override) {
   if (ex?.banco) return `${ex.nombre} · ${ex.manual ? `la cargaste a mano${ex.at ? ` el ${fecha(ex.at)}` : ''}` : `CriptoYa${ex.at ? `, dato de ${fecha(ex.at)}` : ''}`} (${def.nombre} ${punta} en DolarAPI: ${hoy})`;
   if (ex) return `${ex.nombre} · CriptoYa, ${ex.conComisiones ? 'con' : 'sin'} comisiones${ex.at ? `, precio de las ${hora(ex.at)}` : ''} (${def.nombre} ${punta} en DolarAPI: ${hoy})`;
   if (override) return `Cargado a mano en la calculadora (${def.nombre} ${punta}: ${hoy})`;
+  if (id === 'blue' && punta === 'venta' && calle) return `Tu blue de la calle, cargado el ${fecha(calle.at)} (blue venta en DolarAPI: ${hoy})`;
   const m = cot.mercados[id];
   const c = estadoDe(id);
   if (!precioMercado(id, punta)) return `${def.nombre} · ${punta} · sin cotización válida: cargala a mano`;
@@ -836,16 +863,16 @@ function evolucionSimple(id, lista) {
 }
 
 /* ---------- Mi operativa ---------- */
-const esLaOperativa = () => $('#mercado-compra').value === 'oficial' && $('#mercado-venta').value === 'cripto' && $('#modo-monto').value === 'ars' && $('#conversion-sentido').value === 'sobreprecio';
-/** 'simple' deja la calculadora en pesos → dólar oficial → USDT (pagando X % más) → pesos; 'completa', como siempre. */
+const esLaOperativa = () => $('#mercado-compra').value === 'blue' && $('#mercado-venta').value === 'cripto' && $('#modo-monto').value === 'ars' && $('#conversion-sentido').value === 'sobreprecio';
+/** 'simple' deja la calculadora en pesos → billete (blue) → USDT (pagando X % más) → pesos; 'completa', como siempre. */
 function aplicarOperativa(v, { guardar = true } = {}) {
   operativa = v === 'completa' ? 'completa' : 'simple';
   if (guardar) storage.set(KEY_OPERATIVA, operativa);
   document.body.dataset.operativa = operativa;
   if (operativa === 'simple' && !esLaOperativa()) {
-    const cambiaMercado = $('#mercado-compra').value !== 'oficial' || $('#mercado-venta').value !== 'cripto';
+    const cambiaMercado = $('#mercado-compra').value !== 'blue' || $('#mercado-venta').value !== 'cripto';
     const eraUnidades = $('#modo-monto').value !== 'ars';
-    $('#mercado-compra').value = 'oficial';
+    $('#mercado-compra').value = 'blue';
     $('#mercado-venta').value = 'cripto';
     $('#modo-monto').value = 'ars';
     $('#conversion-sentido').value = 'sobreprecio';
@@ -1127,6 +1154,17 @@ function bind() {
     if (b) aplicarNivel(b.dataset.subirNivel);
   });
   $('#form-sim').addEventListener('submit', (ev) => ev.preventDefault());
+  const guardarCalleDelCampo = () => {
+    const r = leerCalle($('#blue-calle-precio').value, new Date());
+    if (!r.ok) { $('#blue-calle-estado').textContent = `${r.error} No se guardó.`; $('#blue-calle-precio').setAttribute('aria-invalid', 'true'); return; }
+    $('#blue-calle-precio').removeAttribute('aria-invalid');
+    $('#blue-calle-precio').blur();
+    guardarCalle(r.calle);
+    avisar(`Guardé tu blue de la calle: ${formatARS(toDec(r.calle.venta))}. Queda para las próximas veces.`);
+  };
+  $('#blue-calle-guardar').addEventListener('click', guardarCalleDelCampo);
+  $('#blue-calle-precio').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); guardarCalleDelCampo(); } });
+  $('#blue-calle-quitar').addEventListener('click', () => { guardarCalle(null); avisar('Listo: vuelve a usar el blue de DolarAPI.'); });
   $('#mas-costos').addEventListener('toggle', guardarFormulario);
   $('#reset-base').addEventListener('click', () => { sim.overrideBase = false; delete sim.exch.base; if (sim.guardada) sim.guardada.base = false; sincronizarPrecios(); recalcular(); });
   $('#reset-venta').addEventListener('click', () => { sim.overrideVenta = false; delete sim.exch.venta; if (sim.guardada) sim.guardada.venta = false; sincronizarPrecios(); recalcular(); });
@@ -1294,12 +1332,12 @@ function herramientasParaClaude() {
   return [
     {
       name: 'cotizaciones_de_hoy',
-      description: 'Cotizaciones actuales que tiene Brecha: oficial, blue, MEP, CCL y cripto (DolarAPI) con compra, venta, fecha y si está antigua, y el dólar en bancos (Nación automático; Galicia sólo si el usuario la cargó a mano). "venta" es lo que paga el usuario al comprar; "compra" es lo que le pagan al vender.',
+      description: 'Cotizaciones actuales que tiene Brecha: oficial, blue, MEP, CCL y cripto (DolarAPI) con compra, venta, fecha y si está antigua, el dólar en bancos (Nación automático; Galicia sólo si el usuario la cargó a mano) y el blue de la calle que cargó el usuario (el precio real al que consigue el billete; si está, usalo en vez del blue de DolarAPI). "venta" es lo que paga el usuario al comprar; "compra" es lo que le pagan al vender.',
       input_schema: { type: 'object', properties: {} },
       run() {
         const mercados = Object.fromEntries(IDS_MERCADOS.map((id) => { const m = cot.mercados[id]; const e = estadoDe(id); return [id, m ? { compra: n(m.compra), venta: n(m.venta), fecha: m.fechaFuente ?? m.editadoAt ?? null, origen: m.origen ?? 'api', estado: e.estado } : null]; }));
         const b = bancos?.datosOpciones().filas.map((x) => ({ banco: x.nombre, venta_lo_que_pagas: n(x.compra), compra_lo_que_te_pagan: n(x.venta), origen: x.origen, fecha: x.fecha, aviso: x.motivos.join('; ') || null })) ?? [];
-        return { mercados, bancos: b, consultado: cot.ultimaConsulta?.at ?? null };
+        return { mercados, bancos: b, blue_de_la_calle: calle ? { venta_lo_que_paga: n(calle.venta), cargado: calle.at } : null, consultado: cot.ultimaConsulta?.at ?? null };
       },
     },
     {
@@ -1316,7 +1354,7 @@ function herramientasParaClaude() {
     },
     {
       name: 'calcular_operativa',
-      description: 'Cuenta exacta de la operativa pesos → dólares → USDT → pesos. pct_usdt es cuánto más caro sale cada USDT en dólares (2 = cada USDT cuesta 1,02 USD). Devuelve dólares comprados, USDT recibidos, pesos cobrados, ganancia o pérdida y a qué precio de venta queda hecho. No incluye comisiones ni impuestos salvo comision_venta_pct.',
+      description: 'Cuenta exacta de la operativa pesos → dólar billete → USDT → pesos. pct_usdt es cuánto más caro sale cada USDT en dólares (2 = cada USDT cuesta 1,02 USD). Devuelve dólares comprados, USDT recibidos, pesos cobrados, ganancia o pérdida y a qué precio de venta queda hecho. No incluye comisiones ni impuestos salvo comision_venta_pct.',
       input_schema: { type: 'object', properties: { pesos: { type: 'number' }, precio_dolar: { type: 'number', description: 'pesos por dólar al comprar' }, pct_usdt: { type: 'number', description: '% arriba del dólar que cuesta cada USDT (0 = 1 a 1)' }, precio_venta_usdt: { type: 'number', description: 'pesos por USDT al vender' }, comision_venta_pct: { type: 'number' } }, required: ['pesos', 'precio_dolar', 'pct_usdt', 'precio_venta_usdt'] },
       run(i) {
         const pesos = numero(i.pesos, 'pesos'); const pd = numero(i.precio_dolar, 'precio_dolar'); const pv = numero(i.precio_venta_usdt, 'precio_venta_usdt');
@@ -1350,6 +1388,18 @@ function herramientasParaClaude() {
         const r = bancos.guardarManual('galicia', { venta: formatNumberAR(numero(i.venta, 'venta'), { decimals: 4, minDecimals: 0 }), compra: i.compra === undefined ? '' : formatNumberAR(numero(i.compra, 'compra'), { decimals: 4, minDecimals: 0 }) });
         if (!r.ok) throw new Error(r.error);
         return { ok: true, venta: n(r.fila.venta), compra: n(r.fila.compra), aviso: r.fila.motivos.join('; ') || null };
+      },
+    },
+    {
+      name: 'guardar_blue_calle',
+      description: 'Guarda el precio del blue de la calle que dice el usuario (lo que paga por cada dólar billete). Queda guardado y la calculadora lo usa en vez del blue de DolarAPI. Para volver al de DolarAPI, venta = 0.',
+      input_schema: { type: 'object', properties: { venta: { type: 'number', description: 'pesos por dólar billete; 0 para borrar el guardado' } }, required: ['venta'] },
+      run(i) {
+        if (Number(i.venta) === 0) { guardarCalle(null); return { ok: true, borrado: true, blue_dolarapi: n(precioMercado('blue', 'venta')) }; }
+        const r = leerCalle(formatNumberAR(numero(i.venta, 'venta'), { decimals: 4, minDecimals: 0 }), new Date());
+        if (!r.ok) throw new Error(r.error);
+        guardarCalle(r.calle);
+        return { ok: true, venta: n(r.calle.venta), blue_dolarapi: n(precioMercado('blue', 'venta')), aviso: avisoCalle(r.calle, precioMercado('blue', 'venta')) };
       },
     },
   ];

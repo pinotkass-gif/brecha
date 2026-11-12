@@ -165,7 +165,7 @@ export function crearOpcionesUsdt({ cont, exchanges, bancos = null, ahora = () =
       const resto = opciones.slice(VISIBLES);
       el.innerHTML = `${cabeza(def, datos, pref)}${frente}
         <ol class="opc-lista">${opciones.slice(0, VISIBLES).map((x, i) => item(clave, def, x, i, elegido)).join('')}</ol>
-        ${resto.length ? `<details class="opc-mas" data-opc-mas="${clave}"${abiertos[clave] ? ' open' : ''}><summary>Ver las otras ${resto.length}</summary><ol class="opc-lista" start="${VISIBLES + 1}">${resto.map((x, i) => item(clave, def, x, i + VISIBLES, elegido)).join('')}</ol></details>` : ''}
+        ${resto.length ? `<details class="opc-mas" data-opc-mas="${clave}"${abiertos[clave] ? ' open' : ''}><summary><span class="opc-ver">Ver las otras ${resto.length}</span><span class="opc-ocultar">Achicar la lista</span></summary><ol class="opc-lista" start="${VISIBLES + 1}">${resto.map((x, i) => item(clave, def, x, i + VISIBLES, elegido)).join('')}</ol><button type="button" class="btn ghost small opc-achicar" data-opc-achicar>Achicar la lista</button></details>` : ''}
         ${retiro.donde === clave ? retiro.html : ''}
         <p class="hint">Es un precio de referencia: verificalo en el exchange antes de operar (límites, medios de pago y, en los P2P, el aviso).</p>`;
     }
@@ -174,6 +174,14 @@ export function crearOpcionesUsdt({ cont, exchanges, bancos = null, ahora = () =
   for (const [clave, el] of Object.entries(cont)) {
     if (!el) continue;
     el.addEventListener('click', (ev) => {
+      // Lista larga abierta: «Achicar la lista» o tocar el recuadro (fuera de un botón o campo) la vuelve a achicar
+      const mas = el.querySelector('details[data-opc-mas][open]');
+      if (mas && (ev.target.closest('[data-opc-achicar]') || !ev.target.closest('button, a, input, select, textarea, label, summary'))) {
+        mas.open = false;
+        abiertos[clave] = false;
+        if (el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: 'start' });
+        return;
+      }
       const act = ev.target.closest('[data-opc-actualizar]');
       if (act) { if (act.dataset.opcActualizar === 'bancos') bancos?.actualizar(true); else exchanges.actualizar(true); return; }
       if (ev.target.closest('[data-opc-ir-manual]')) { onIrAManual(); return; }

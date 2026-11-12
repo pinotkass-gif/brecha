@@ -120,7 +120,7 @@
         </article>
         <article class="inicio-parte" id="inicio-3">
           <h2 class="inicio-titulo">Tu <br>operativa</h2>
-          <p class="inicio-texto">Pesos → dólares → USDT → pesos. Cargás a cuánto comprás el dólar, qué % te cobran los USDT y a cuánto los vendés: Brecha te dice cuánto ganás.</p>
+          <p class="inicio-texto">Pesos → billete → USDT → pesos. Cargás a cuánto conseguís el billete en la calle, qué % te cobran los USDT y a cuánto los vendés: Brecha te dice cuánto ganás.</p>
           <div class="inicio-acciones"><button type="button" class="inicio-btn" data-ir="sec-simulacion">Calcular</button></div>
         </article>
         <article class="inicio-parte" id="inicio-4">
@@ -173,8 +173,8 @@
       </div>
       <div id="panel-simple" role="tabpanel" aria-labelledby="tab-simple">
       <p class="hint panel-hint" data-solo="completa">Comprás en un mercado y vendés en otro. El resultado sólo descuenta los costos que cargues.</p>
-      <p class="hint panel-hint" data-solo="simple">Tu operativa: con pesos comprás dólares, con esos dólares conseguís USDT y los vendés por pesos. <button type="button" class="btn ghost small" data-ir-operativa="completa">Ver la calculadora completa</button></p>
-      <p class="hint panel-hint" data-solo="completa"><button type="button" class="btn ghost small" data-ir-operativa="simple">Volver a mi operativa (pesos → USD → USDT → pesos)</button></p>
+      <p class="hint panel-hint" data-solo="simple">Tu operativa: con pesos comprás billetes (blue de la calle), con esos billetes conseguís USDT y los vendés por pesos. <button type="button" class="btn ghost small" data-ir-operativa="completa">Ver la calculadora completa</button></p>
+      <p class="hint panel-hint" data-solo="completa"><button type="button" class="btn ghost small" data-ir-operativa="simple">Volver a mi operativa (pesos → billete → USDT → pesos)</button></p>
       <div class="sim-grid">
         <form id="form-sim" class="form" novalidate autocomplete="off">
           <fieldset>
@@ -208,13 +208,22 @@
           <fieldset>
             <legend>Precios</legend>
             <div class="field">
-              <label for="cotizacion-base"><span data-solo="completa">Cotización base de compra <span class="unit">ARS por unidad</span></span><span data-solo="simple">A cuánto comprás el dólar <span class="unit">pesos por dólar</span></span></label>
+              <label for="cotizacion-base"><span data-solo="completa">Cotización base de compra <span class="unit">ARS por unidad</span></span><span data-solo="simple">A cuánto comprás el billete <span class="unit">pesos por dólar</span></span></label>
               <div class="with-action">
                 <input id="cotizacion-base" name="cotizacionBase" type="text" inputmode="decimal" aria-describedby="cotizacion-base-echo cotizacion-base-src">
                 <button type="button" class="btn ghost small" id="reset-base" hidden>Usar la del mercado</button>
               </div>
               <small id="cotizacion-base-src" class="src"></small>
               <small id="cotizacion-base-echo" class="echo"></small>
+            </div>
+            <div id="blue-calle" class="blue-calle opciones-usdt" hidden>
+              <label for="blue-calle-precio">Tu blue de la calle <span class="unit">lo que pagás por cada billete</span></label>
+              <div class="with-action">
+                <input id="blue-calle-precio" type="text" inputmode="decimal" placeholder="Ej.: 1.450" aria-describedby="blue-calle-estado">
+                <button type="button" class="btn small" id="blue-calle-guardar">Guardar</button>
+                <button type="button" class="btn ghost small" id="blue-calle-quitar" hidden>Usar el de DolarAPI</button>
+              </div>
+              <small id="blue-calle-estado" class="hint" role="status"></small>
             </div>
             <div id="opc-base" class="opciones-usdt" aria-live="polite" hidden></div>
             <div class="field" data-desde="avanzado">
