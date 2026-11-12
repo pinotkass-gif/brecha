@@ -762,6 +762,7 @@ body[data-operativa="simple"] #form-sim fieldset:nth-of-type(2) { display: flex;
 body[data-operativa="simple"] #form-sim fieldset:nth-of-type(2) > * { order: 9; }
 body[data-operativa="simple"] #form-sim fieldset:nth-of-type(2) > .field:has(#cotizacion-base) { order: 1 !important; }
 body[data-operativa="simple"] #blue-calle { order: 1 !important; }
+body[data-operativa="simple"] .opc-retiro { display: none !important; }
 body[data-operativa="simple"] #opc-base { order: 2 !important; }
 body[data-operativa="simple"] #campo-relacion { order: 3 !important; }
 body[data-operativa="simple"] #form-sim fieldset:nth-of-type(2) > .field:has(#precio-venta) { order: 4 !important; }

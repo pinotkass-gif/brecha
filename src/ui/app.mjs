@@ -869,6 +869,9 @@ function aplicarOperativa(v, { guardar = true } = {}) {
   operativa = v === 'completa' ? 'completa' : 'simple';
   if (guardar) storage.set(KEY_OPERATIVA, operativa);
   document.body.dataset.operativa = operativa;
+  // Él recibe los USDT directo en la wallet donde los vende (12/11/2026): no hay traspaso entre wallets.
+  // Sólo si el campo está vacío ("No sé"): nunca pisa algo que cargó.
+  if (operativa === 'simple' && $('#transf').value.trim() === '') $('#transf').value = 'no aplica';
   if (operativa === 'simple' && !esLaOperativa()) {
     const cambiaMercado = $('#mercado-compra').value !== 'blue' || $('#mercado-venta').value !== 'cripto';
     const eraUnidades = $('#modo-monto').value !== 'ars';
