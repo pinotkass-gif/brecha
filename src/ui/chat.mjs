@@ -7,6 +7,7 @@ import { crearFuenteHistorico } from '../historico/fuente.mjs';
 import { interpretarEscenario, calcularEscenario, MERCADOS_CALCULADORA } from '../chat/escenario.mjs';
 import { interpretarExchanges, responderExchanges } from '../chat/exchanges.mjs';
 import { interpretarGalicia, responderGalicia } from '../chat/bancos.mjs';
+import { crearClaude, pareceClave, KEY_CLAVE, MODELO } from '../chat/claude.mjs';
 import { formatNumberAR, parseNumberAR } from '../engine/format.mjs';
 import { esc } from './comun.mjs';
 
@@ -94,7 +95,6 @@ function htmlRespuesta(r, i) {
   const frases = r.frases.map((f) => `<p>${esc(f)}</p>`).join('');
   const botones = [
     r.accion ? `<button type="button" class="btn small" data-abrir-calculadora="${i}">${r.accion.tipo === 'galicia' ? 'Usarla en la calculadora' : 'Abrir en la calculadora'}</button>` : '',
-    r.verExchanges ? '<button type="button" class="btn ghost small" data-ir-exchanges>Ver todo en «USDT en exchanges»</button>' : '',
   ].join('');
   const accion = botones ? `<div class="banner-actions">${botones}</div>` : '';
   const avisos = r.avisos?.length ? `<ul class="chat-avisos">${r.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>` : '';
@@ -113,8 +113,31 @@ function ayudaEscenario(motivo) {
 /**
  * @param {{root: HTMLElement, storage: {get: Function, set: Function, trySet: Function}, ahora?: () => Date, fetch?: typeof fetch}} deps
  */
-export function crearChat({ root, storage, ahora = () => new Date(), fetch: f, precioDeHoy = () => null, onAbrirCalculadora = () => {}, exchanges = null, onIrAExchanges = () => {}, bancos = null }) {
+export function crearChat({ root, storage, ahora = () => new Date(), fetch: f, precioDeHoy = () => null, onAbrirCalculadora = () => {}, exchanges = null, onIrAExchanges = () => {}, bancos = null, herramientasClaude = [] }) {
   const fuente = crearFuenteHistorico({ storage, ahora, fetch: f });
+  // Claude (si pegaste tu clave): responde con herramientas que leen los datos de la app; sin clave, el reconocedor de siempre
+  let clave = (() => { const g = storage.get(KEY_CLAVE); return pareceClave(g) ? g.trim() : null; })();
+  const historicoParaClaude = {
+    name: 'historico_dolar',
+    description: 'Histórico diario (cierre de cada día, ArgentinaDatos) de un tipo de dólar entre dos fechas: primero, último, máximo, mínimo, promedio y una muestra de puntos. Usala para cualquier pregunta sobre el pasado (cuánto estaba, cuánto subió, brechas históricas: pedí los dos mercados y compará).',
+    input_schema: { type: 'object', properties: { mercado: { type: 'string', enum: Object.keys(MERCADOS_HIST) }, desde: { type: 'string', description: 'AAAA-MM-DD' }, hasta: { type: 'string', description: 'AAAA-MM-DD (si falta, hoy)' } }, required: ['mercado', 'desde'] },
+    async run({ mercado, desde, hasta }) {
+      const c = await fuente.cargar(mercado);
+      if (!c.ok) return { error: c.error };
+      const h = /^\d{4}-\d{2}-\d{2}$/.test(hasta ?? '') ? hasta : hoyAR(ahora());
+      const filas = c.filas.filter((x) => x.fecha >= String(desde) && x.fecha <= h);
+      if (!filas.length) return { error: `No hay datos de ${mercado} entre ${desde} y ${h}. Hay datos desde ${c.filas[0].fecha} hasta ${c.filas.at(-1).fecha}.` };
+      const v = filas.map((x) => x.venta);
+      const paso = Math.max(1, Math.ceil(filas.length / 24));
+      return {
+        mercado, desde: filas[0].fecha, hasta: filas.at(-1).fecha, dias: filas.length, primero: filas[0], ultimo: filas.at(-1),
+        maximo_venta: filas.reduce((a, x) => (x.venta > a.venta ? x : a)), minimo_venta: filas.reduce((a, x) => (x.venta < a.venta ? x : a)),
+        promedio_venta: Math.round((v.reduce((a, x) => a + x, 0) / v.length) * 100) / 100,
+        muestra: filas.filter((_, i) => i % paso === 0), fuente: 'ArgentinaDatos, cierre de cada día',
+      };
+    },
+  };
+  const claude = crearClaude({ fetch: f, getClave: () => clave, herramientas: [...herramientasClaude, historicoParaClaude] });
   let mensajes = restaurar(storage.get(KEY));
   let ocupado = false;
 
@@ -126,11 +149,34 @@ export function crearChat({ root, storage, ahora = () => new Date(), fetch: f, p
         <input id="chat-pregunta" type="text" maxlength="300" enterkeyhint="send" placeholder="Ej.: ¿cómo estuvo la brecha oficial cripto los últimos 3 meses?">
         <button type="submit" class="btn primary" id="chat-enviar">Preguntar</button>
       </form>
+      <details class="politica chat-claude" id="chat-claude">
+        <summary id="chat-claude-estado"></summary>
+        <div id="chat-claude-cuerpo"></div>
+      </details>
       <p class="hint chat-pie">Responde con las cotizaciones de cierre de cada día (ArgentinaDatos), simula operaciones con el motor de la calculadora («consigo el oficial a 1535 y compro USDT al 2 %: ¿cómo salgo si vendo?») , contesta sobre USDT en los exchanges con los precios de CriptoYa («¿dónde está más barato el USDT?», «compro en Belo y vendo en Binance P2P») y carga la cotización de Galicia («galicia 1535»). No es una inteligencia artificial: entiende preguntas sobre oficial, blue, MEP, CCL, cripto, mayorista y tarjeta. <button type="button" class="btn ghost small" data-chat="borrar">Borrar la conversación</button></p>
     </div>`;
   const log = root.querySelector('.chat-log');
   const input = root.querySelector('#chat-pregunta');
   const enviar = root.querySelector('#chat-enviar');
+
+  function renderClaude() {
+    root.querySelector('#chat-claude-estado').textContent = clave ? 'Claude conectado: responde las preguntas con los datos de Brecha' : 'Conectar Claude (inteligencia artificial) para que el chat entienda cualquier pregunta';
+    root.querySelector('#chat-claude-cuerpo').innerHTML = clave
+      ? `<p class="hint">Tu clave está guardada sólo en este navegador (termina en …${esc(clave.slice(-4))}). Cada pregunta se cobra en tu cuenta de Anthropic (modelo ${esc(MODELO)}).</p>
+         <button type="button" class="btn ghost small" data-claude="quitar">Quitar la clave de este navegador</button>`
+      : `<ol class="hint chat-claude-pasos">
+           <li>Entrá a <a href="https://console.anthropic.com/settings/keys" rel="noopener" target="_blank">console.anthropic.com</a>, creá una cuenta y cargale crédito (se paga por uso).</li>
+           <li>En «Limits» poné un tope de gasto mensual, y en «API keys» creá una clave.</li>
+           <li>Pegala acá. Queda guardada sólo en este navegador: hay que pegarla una vez en el celular y otra en la compu.</li>
+         </ol>
+         <form class="chat-form" id="chat-claude-form" novalidate autocomplete="off">
+           <label for="chat-claude-clave" class="sr-only">Clave de la API de Anthropic</label>
+           <input id="chat-claude-clave" type="password" maxlength="320" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+           <button type="submit" class="btn small">Guardar</button>
+         </form>
+         <p class="card-error" id="chat-claude-error" role="alert" hidden></p>`;
+    input.placeholder = clave ? 'Preguntale lo que quieras a Claude: «compro a 1535 y los USDT al 2 %, ¿cómo salgo?»' : 'Ej.: ¿cómo estuvo la brecha oficial cripto los últimos 3 meses?';
+  }
 
   function guardar() {
     let lista = mensajes.slice(-MAX_MENSAJES).map((m) => (m.respuesta ? { ...m, respuesta: paraGuardar(m.respuesta) } : m));
@@ -151,6 +197,22 @@ export function crearChat({ root, storage, ahora = () => new Date(), fetch: f, p
     if (!pregunta || ocupado) return;
     ocupado = true;
     mensajes.push({ rol: 'yo', texto: pregunta });
+    // Con Claude conectado, responde Claude (con las herramientas de la app)
+    if (clave) {
+      const msg = { rol: 'brecha', pendiente: 'Claude está pensando…' };
+      mensajes.push(msg);
+      render({ bajar: true });
+      let r;
+      try { r = await claude.preguntar(pregunta); } catch { r = { ok: false, error: 'No pude hablar con Claude: probá de nuevo.' }; }
+      delete msg.pendiente;
+      msg.respuesta = r.ok
+        ? { ok: true, frases: r.texto.split(/\n+/).map((x) => x.trim()).filter(Boolean).slice(0, 20), avisos: [], series: [], tabla: null, unidad: '', fuente: `Respondió Claude${r.usadas.length ? ' con los datos y las cuentas de Brecha' : ''}. Es una simulación: verificá los precios antes de operar.` }
+        : { ok: false, frases: [r.error], avisos: [], series: [], tabla: null, unidad: '', fuente: '' };
+      ocupado = false;
+      guardar();
+      render({ bajar: true });
+      return;
+    }
     // ¿Cargar o consultar Galicia ("galicia 1535", "galicia compra 1485 venta 1535", "¿a cuánto está galicia?")?
     const gal = bancos ? interpretarGalicia(pregunta) : null;
     if (gal) {
@@ -235,6 +297,17 @@ export function crearChat({ root, storage, ahora = () => new Date(), fetch: f, p
 
   root.addEventListener('submit', (ev) => {
     ev.preventDefault();
+    if (ev.target.id === 'chat-claude-form') {
+      const v = root.querySelector('#chat-claude-clave').value.trim();
+      const err = root.querySelector('#chat-claude-error');
+      if (!pareceClave(v)) { err.textContent = 'Eso no parece una clave de Anthropic: empieza con «sk-ant-».'; err.hidden = false; return; }
+      if (!storage.trySet(KEY_CLAVE, v)) { err.textContent = 'El navegador no me dejó guardarla.'; err.hidden = false; return; }
+      clave = v;
+      claude.reiniciar();
+      root.querySelector('#chat-claude').open = false;
+      renderClaude();
+      return;
+    }
     const t = input.value;
     input.value = '';
     preguntar(t);
@@ -249,12 +322,15 @@ export function crearChat({ root, storage, ahora = () => new Date(), fetch: f, p
       return;
     }
     if (ev.target.closest('[data-ir-exchanges]')) { onIrAExchanges(); return; }
+    if (ev.target.closest('[data-claude="quitar"]')) { clave = null; storage.set(KEY_CLAVE, null); claude.reiniciar(); renderClaude(); return; }
     if (ev.target.closest('[data-chat="borrar"]')) {
+      claude.reiniciar();
       mensajes = [];
       storage.set(KEY, []);
       render();
     }
   });
+  renderClaude();
   render();
   return { preguntar, mensajes: () => mensajes };
 }

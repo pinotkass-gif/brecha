@@ -24,7 +24,7 @@ import { crearExchanges } from './exchanges.mjs';
 import { crearOpcionesUsdt } from './opciones-usdt.mjs';
 import { crearBancos } from './bancos.mjs';
 import { crearInicio } from './inicio.mjs';
-import { conversionComprando, conversionVendiendo } from '../exchanges/arbitraje.mjs';
+import { conversionComprando, conversionVendiendo, prepararPrecios, opcionesLado } from '../exchanges/arbitraje.mjs';
 import { resumenDeSimple, resumenDeRuta, trazaDeSimple } from '../historial/modelo.mjs';
 import { simularRuta } from '../engine/route.mjs';
 import { rutaDesdeSimple } from '../routes/desde-simple.mjs';
@@ -58,7 +58,10 @@ const rangoNivel = (n) => NIVELES_USO.indexOf(n);
 /** Versión: 'celular' (pestañas abajo, compacta) o 'web' (compu). La define index.html (scripts/variantes.mjs). */
 const PLATAFORMA = document.documentElement.dataset.plataforma === 'celular' ? 'celular' : 'web';
 const KEY_SECCION = 'brecha.seccion.v1';
-const SECCIONES = ['sec-inicio', 'sec-simulacion', 'sec-cotizaciones', 'sec-exchanges', 'sec-preguntar', 'oportunidades', 'historial'];
+const SECCIONES = ['sec-inicio', 'sec-simulacion', 'sec-cotizaciones', 'sec-preguntar', 'oportunidades', 'historial'];
+/** Calculadora con lo justo para la operativa del propietario (pesos → USD → USDT → pesos) o completa. */
+const KEY_OPERATIVA = 'brecha.operativa.v1';
+let operativa = 'completa'; // se decide en init
 /** Compu: por pestañas (una sección a la vez, como el celular) o todo junto (la página larga de antes). */
 const KEY_VISTA = 'brecha.pantalla.v1'; // ojo: 'brecha.vista.v1' es la vista de la matriz
 /** La presentación aparece la primera vez; después la app abre en la última pestaña. */
@@ -430,9 +433,10 @@ function actualizarEtiquetas() {
   $('#relacion-probar').hidden = mismo;
   $('#relacion-hipotesis').disabled = mismo;
   $('#campo-relacion').classList.toggle('requerido', !mismo);
-  $('#conversion-pregunta').textContent = mismo ? 'Conversión' : `¿Cuánto te cobran por pasar de ${na} a ${nb}?`;
-  $('#relacion-unidad').textContent = mismo ? 'no hace falta: comprás y vendés el mismo dólar' : `${UNIDAD_SENTIDO[$('#conversion-sentido').value] ?? UNIDAD_SENTIDO.cobran} (obligatorio)`;
-  $('#relacion-hint').textContent = mismo
+  const simple = operativa === 'simple';
+  $('#conversion-pregunta').textContent = simple ? 'Qué % en USD te cobran los USDT' : mismo ? 'Conversión' : `¿Cuánto te cobran por pasar de ${na} a ${nb}?`;
+  $('#relacion-unidad').textContent = simple ? '% arriba del dólar (obligatorio)' : mismo ? 'no hace falta: comprás y vendés el mismo dólar' : `${UNIDAD_SENTIDO[$('#conversion-sentido').value] ?? UNIDAD_SENTIDO.cobran} (obligatorio)`;
+  $('#relacion-hint').textContent = simple ? 'Lo que pagás de más por cada USDT, en dólares. Por ejemplo 2 = cada USDT te sale 1,02 dólares. Si te los dan 1 a 1, poné 0.' : mismo
     ? ''
     : `Comprás ${a.instrumento} y vendés ${b.instrumento}: no son lo mismo, y pasar de uno al otro suele tener un costo. Cargá el % que te cobran en esa operación (por ejemplo 1,5) o, si pagás cada ${b.unidad} más caro que el ${a.unidad} (por ejemplo el oficial + 2 %), elegí «Pagás más caro». Si no te cobran nada, poné 0. Si no lo sabés, no hay resultado; podés probar sin costo marcándolo como hipótesis.`;
   for (const id of ['otros-cobro', 'transf-cobro']) {
@@ -831,8 +835,30 @@ function evolucionSimple(id, lista) {
   });
 }
 
+/* ---------- Mi operativa ---------- */
+const esLaOperativa = () => $('#mercado-compra').value === 'oficial' && $('#mercado-venta').value === 'cripto' && $('#modo-monto').value === 'ars' && $('#conversion-sentido').value === 'sobreprecio';
+/** 'simple' deja la calculadora en pesos → dólar oficial → USDT (pagando X % más) → pesos; 'completa', como siempre. */
+function aplicarOperativa(v, { guardar = true } = {}) {
+  operativa = v === 'completa' ? 'completa' : 'simple';
+  if (guardar) storage.set(KEY_OPERATIVA, operativa);
+  document.body.dataset.operativa = operativa;
+  if (operativa === 'simple' && !esLaOperativa()) {
+    const cambiaMercado = $('#mercado-compra').value !== 'oficial' || $('#mercado-venta').value !== 'cripto';
+    const eraUnidades = $('#modo-monto').value !== 'ars';
+    $('#mercado-compra').value = 'oficial';
+    $('#mercado-venta').value = 'cripto';
+    $('#modo-monto').value = 'ars';
+    $('#conversion-sentido').value = 'sobreprecio';
+    if (eraUnidades) $('#monto').value = '1.000.000'; // el monto estaba en dólares: arranca con un millón de pesos
+    if (cambiaMercado) { cambiarMercado(); return; } // recalcula
+  }
+  recalcular();
+}
+
 /* ---------- Ciclo ---------- */
 function recalcular() {
+  // Si algo cargó otra operación (historial, chat, matriz), se muestra la calculadora completa: las etiquetas simples mentirían
+  if (operativa === 'simple' && !esLaOperativa()) { operativa = 'completa'; document.body.dataset.operativa = 'completa'; }
   const entrada = leerFormulario();
   actualizarPrecioFinal(entrada);
   renderResultado(calcularSimple(entrada), entrada);
@@ -1261,6 +1287,74 @@ function cargarRetiro({ valor, cobro }) {
   avisar(`Cargué ${valor} USDT en «Costo de transferencia» (lo que cuesta pasar los USDT de un exchange al otro).`);
 }
 
+/* ---------- Herramientas para Claude (chat): leen los datos de la app y calculan con el motor ---------- */
+function herramientasParaClaude() {
+  const n = (x) => (x === null || x === undefined ? null : Number(plain(toDec(x))));
+  const numero = (x, nombre) => { const d = toDec(String(x)); if (!d.gt(0)) throw new Error(`${nombre} tiene que ser mayor que 0.`); return d; };
+  return [
+    {
+      name: 'cotizaciones_de_hoy',
+      description: 'Cotizaciones actuales que tiene Brecha: oficial, blue, MEP, CCL y cripto (DolarAPI) con compra, venta, fecha y si está antigua, y el dólar en bancos (Nación automático; Galicia sólo si el usuario la cargó a mano). "venta" es lo que paga el usuario al comprar; "compra" es lo que le pagan al vender.',
+      input_schema: { type: 'object', properties: {} },
+      run() {
+        const mercados = Object.fromEntries(IDS_MERCADOS.map((id) => { const m = cot.mercados[id]; const e = estadoDe(id); return [id, m ? { compra: n(m.compra), venta: n(m.venta), fecha: m.fechaFuente ?? m.editadoAt ?? null, origen: m.origen ?? 'api', estado: e.estado } : null]; }));
+        const b = bancos?.datosOpciones().filas.map((x) => ({ banco: x.nombre, venta_lo_que_pagas: n(x.compra), compra_lo_que_te_pagan: n(x.venta), origen: x.origen, fecha: x.fecha, aviso: x.motivos.join('; ') || null })) ?? [];
+        return { mercados, bancos: b, consultado: cot.ultimaConsulta?.at ?? null };
+      },
+    },
+    {
+      name: 'precios_usdt_en_exchanges',
+      description: 'A cuánto se vende y se compra el USDT por pesos en los exchanges argentinos ahora (CriptoYa, con comisiones): los 8 que más pagan al vender y los 8 más baratos para comprar. Los que terminan en P2P son avisos de particulares.',
+      input_schema: { type: 'object', properties: {} },
+      async run() {
+        const d = await exchanges.datos();
+        if (!d) return { error: 'No pude traer los precios de los exchanges ahora.' };
+        const pr = prepararPrecios(d.ars, { at: d.at });
+        const lista = (lado) => opcionesLado(pr, lado).opciones.slice(0, 8).map((x) => ({ exchange: x.nombre, precio: n(x.precio), p2p: x.p2p }));
+        return { recibido: d.at, para_vender_usdt: lista('venta'), para_comprar_usdt: lista('compra') };
+      },
+    },
+    {
+      name: 'calcular_operativa',
+      description: 'Cuenta exacta de la operativa pesos → dólares → USDT → pesos. pct_usdt es cuánto más caro sale cada USDT en dólares (2 = cada USDT cuesta 1,02 USD). Devuelve dólares comprados, USDT recibidos, pesos cobrados, ganancia o pérdida y a qué precio de venta queda hecho. No incluye comisiones ni impuestos salvo comision_venta_pct.',
+      input_schema: { type: 'object', properties: { pesos: { type: 'number' }, precio_dolar: { type: 'number', description: 'pesos por dólar al comprar' }, pct_usdt: { type: 'number', description: '% arriba del dólar que cuesta cada USDT (0 = 1 a 1)' }, precio_venta_usdt: { type: 'number', description: 'pesos por USDT al vender' }, comision_venta_pct: { type: 'number' } }, required: ['pesos', 'precio_dolar', 'pct_usdt', 'precio_venta_usdt'] },
+      run(i) {
+        const pesos = numero(i.pesos, 'pesos'); const pd = numero(i.precio_dolar, 'precio_dolar'); const pv = numero(i.precio_venta_usdt, 'precio_venta_usdt');
+        const rel = relacionDesdePct(String(i.pct_usdt), 'sobreprecio');
+        if (!rel.ok) throw new Error(rel.error);
+        const com = i.comision_venta_pct === undefined ? toDec(0) : toDec(String(i.comision_venta_pct));
+        const usd = pesos.div(pd); const usdt = usd.times(rel.relacion);
+        const cobrado = usdt.times(pv).times(toDec(1).minus(com.div(100)));
+        const res = cobrado.minus(pesos);
+        const r2 = (x) => Number(plain(x.round(2)));
+        return { dolares_comprados: r2(usd), usdt_recibidos: r2(usdt), costo_de_cada_usdt_en_pesos: r2(pd.div(rel.relacion)), pesos_cobrados: r2(cobrado), resultado_en_pesos: r2(res), resultado_pct: r2(res.div(pesos).times(100)), precio_de_venta_para_no_perder: r2(pesos.div(usdt).div(toDec(1).minus(com.div(100)))) };
+      },
+    },
+    {
+      name: 'cargar_en_la_calculadora',
+      description: 'Deja cargada la operativa en la pantalla Calcular de la app para que el usuario la vea y la ajuste. Usala sólo si el usuario lo pide.',
+      input_schema: { type: 'object', properties: { pesos: { type: 'number' }, precio_dolar: { type: 'number' }, pct_usdt: { type: 'number' }, precio_venta_usdt: { type: 'number' } }, required: ['pesos', 'precio_dolar', 'pct_usdt', 'precio_venta_usdt'] },
+      run(i) {
+        const f = (x, nombre) => formatNumberAR(numero(x, nombre), { decimals: 6, minDecimals: 0 });
+        const pct = toDec(String(i.pct_usdt));
+        if (pct.lt(0) || pct.gt(100)) throw new Error('pct_usdt tiene que estar entre 0 y 100.');
+        abrirEscenarioEnCalculadora({ tipo: 'calculadora', compra: 'oficial', venta: 'cripto', modo: 'ars', monto: f(i.pesos, 'pesos'), base: f(i.precio_dolar, 'precio_dolar'), precioVenta: f(i.precio_venta_usdt, 'precio_venta_usdt'), conversionPct: formatNumberAR(pct, { decimals: 6, minDecimals: 0 }), sentido: 'sobreprecio' });
+        return { ok: true, nota: 'Quedó cargada en la pestaña Calcular.' };
+      },
+    },
+    {
+      name: 'guardar_cotizacion_galicia',
+      description: 'Guarda la cotización del dólar en Banco Galicia que dicta el usuario (Galicia no se puede traer sola). venta = lo que paga por dólar (obligatoria); compra = lo que le pagan (opcional).',
+      input_schema: { type: 'object', properties: { venta: { type: 'number' }, compra: { type: 'number' } }, required: ['venta'] },
+      run(i) {
+        const r = bancos.guardarManual('galicia', { venta: formatNumberAR(numero(i.venta, 'venta'), { decimals: 4, minDecimals: 0 }), compra: i.compra === undefined ? '' : formatNumberAR(numero(i.compra, 'compra'), { decimals: 4, minDecimals: 0 }) });
+        if (!r.ok) throw new Error(r.error);
+        return { ok: true, venta: n(r.fila.venta), compra: n(r.fila.compra), aviso: r.fila.motivos.join('; ') || null };
+      },
+    },
+  ];
+}
+
 /* ---------- Inicio: números en vivo ---------- */
 function resumenInicio() {
   const v = (id) => precioMercado(id, 'venta');
@@ -1323,6 +1417,10 @@ function bindPestanas() {
     mostrarSeccion(destino);
   });
   $('#btn-vista').addEventListener('click', () => aplicarVista(vista === 'todo' ? 'pestanas' : 'todo'));
+  document.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-ir-operativa]');
+    if (b) aplicarOperativa(b.dataset.irOperativa);
+  });
   // Link a la otra versión (celular ↔ compu), relativo a la raíz de la app
   const otra = document.documentElement.dataset.otra;
   for (const a of document.querySelectorAll('[data-otra-version]')) {
@@ -1421,7 +1519,7 @@ function nivelInicial() {
   if (NIVELES_USO.includes(g)) return g;
   try {
     // Haber visto la presentación o elegir cómo se ve la compu no es "haber usado Brecha"
-    const deVista = new Set([KEY_INICIO_VISTO, KEY_VISTA]);
+    const deVista = new Set([KEY_INICIO_VISTO, KEY_VISTA, KEY_OPERATIVA]);
     for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k?.startsWith('brecha.') && !deVista.has(k)) return 'profesional'; }
   } catch { /* sin almacenamiento */ }
   return 'rapido';
@@ -1538,8 +1636,8 @@ function init() {
     precioDeHoy: (id, punta) => { const v = precioMercado(id, punta); return v ? { valor: v, texto: textoFuente(id, punta, false) } : null; },
     onAbrirCalculadora: (a) => (a?.tipo === 'galicia' ? usarGaliciaEnCalculadora() : abrirEscenarioEnCalculadora(a)),
     bancos: { guardarManual: (id, v) => bancos.guardarManual(id, v), fila: (id) => bancos.fila(id), referencia: () => bancos.referencia() },
+    herramientasClaude: herramientasParaClaude(),
     exchanges: { datos: () => exchanges?.datos() ?? Promise.resolve(null), preferencias: () => exchanges?.preferencias() ?? {} },
-    onIrAExchanges: () => { mostrarSeccion('sec-exchanges'); $('#h-exch').scrollIntoView({ behavior: PLATAFORMA === 'celular' ? 'auto' : 'smooth', block: 'start' }); },
   });
   bancos = crearBancos({
     root: $('#bancos'), storage, avisar,
@@ -1589,6 +1687,7 @@ function init() {
   });
   bindModos();
   bindBarra();
+  aplicarOperativa(storage.get(KEY_OPERATIVA) === 'completa' ? 'completa' : 'simple', { guardar: false });
   aplicarNivel(nivel);
   bindPestanas();
   cambiarModo(storage.get(KEY_MODO) === 'rutas' && nivel === 'profesional' ? 'rutas' : 'simple');

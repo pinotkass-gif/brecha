@@ -71,7 +71,6 @@
     <button type="button" data-seccion="sec-inicio" class="pestana-inicio"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.6L20 9.4l-4 4 1 5.6-5-2.8-5 2.8 1-5.6-4-4 5.4-.8z"/></svg><span>Inicio</span></button>
     <button type="button" data-seccion="sec-simulacion"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M14 11h2M8 15h2M14 15h2"/></svg><span>Calcular</span></button>
     <button type="button" data-seccion="sec-cotizaciones"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 4 7-8"/><path d="M15 8h5v5"/></svg><span>Cotizaciones</span></button>
-    <button type="button" data-seccion="sec-exchanges"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h13l-3-3"/><path d="M19 16H6l3 3"/></svg><span>USDT</span></button>
     <button type="button" data-seccion="sec-preguntar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-8l-4 3v-3H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M8 9h8M8 12h5"/></svg><span>Preguntar</span></button>
     <button type="button" data-seccion="oportunidades" data-desde="avanzado"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg><span>Mercados</span></button>
     <button type="button" data-seccion="historial"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><span>Historial</span></button>
@@ -101,7 +100,7 @@
         <nav class="inicio-progreso" aria-label="Partes de la presentación">
           <button type="button" data-parte="0" aria-label="1: Brecha"><span class="inicio-dash"><span class="inicio-dash-lleno"></span></span></button>
           <button type="button" data-parte="1" aria-label="2: Cotizaciones"><span class="inicio-dash"><span class="inicio-dash-lleno"></span></span></button>
-          <button type="button" data-parte="2" aria-label="3: USDT en exchanges"><span class="inicio-dash"><span class="inicio-dash-lleno"></span></span></button>
+          <button type="button" data-parte="2" aria-label="3: Tu operativa"><span class="inicio-dash"><span class="inicio-dash-lleno"></span></span></button>
           <button type="button" data-parte="3" aria-label="4: Calcular y preguntar"><span class="inicio-dash"><span class="inicio-dash-lleno"></span></span></button>
         </nav>
         <article class="inicio-parte" id="inicio-1">
@@ -109,7 +108,7 @@
           <p class="inicio-bajada">Tu simulador cambiario personal</p>
           <div class="inicio-cols">
             <p class="inicio-texto">Oficial, blue, MEP, CCL y cripto en un solo lugar. Cuánto ganás o perdés pasando de un dólar a otro, con todos los costos y sin inventar ningún número.</p>
-            <p class="inicio-texto">Cotizaciones en vivo, bancos, 35 exchanges de USDT y un chat que entiende cómo hablás: «consigo el oficial a 1535 y compro USDT al 2 %».</p>
+            <p class="inicio-texto">Cotizaciones en vivo, bancos y un chat para preguntar lo que quieras: «compro el dólar a 1535 y los USDT me salen 2 % más, ¿cómo salgo?».</p>
           </div>
           <dl class="inicio-datos" id="inicio-datos"></dl>
           <div class="inicio-acciones"><button type="button" class="inicio-btn" data-ir="sec-simulacion">Calcular</button><button type="button" class="inicio-btn ghost" data-ir="sec-cotizaciones">Cotizaciones</button></div>
@@ -120,9 +119,9 @@
           <div class="inicio-acciones"><button type="button" class="inicio-btn" data-ir="sec-cotizaciones">Ver cotizaciones</button></div>
         </article>
         <article class="inicio-parte" id="inicio-3">
-          <h2 class="inicio-titulo">USDT <br>en vivo</h2>
-          <p class="inicio-texto">35 exchanges con CriptoYa: dónde comprar más barato, dónde vender más caro y el arbitraje entre ellos, con la comisión de retiro de cada red.</p>
-          <div class="inicio-acciones"><button type="button" class="inicio-btn" data-ir="sec-exchanges">Ver USDT</button></div>
+          <h2 class="inicio-titulo">Tu <br>operativa</h2>
+          <p class="inicio-texto">Pesos → dólares → USDT → pesos. Cargás a cuánto comprás el dólar, qué % te cobran los USDT y a cuánto los vendés: Brecha te dice cuánto ganás.</p>
+          <div class="inicio-acciones"><button type="button" class="inicio-btn" data-ir="sec-simulacion">Calcular</button></div>
         </article>
         <article class="inicio-parte" id="inicio-4">
           <h2 class="inicio-titulo">Calculá <br>y preguntá</h2>
@@ -173,18 +172,20 @@
         </div>
       </div>
       <div id="panel-simple" role="tabpanel" aria-labelledby="tab-simple">
-      <p class="hint panel-hint">Comprás en un mercado y vendés en otro. El resultado sólo descuenta los costos que cargues.</p>
+      <p class="hint panel-hint" data-solo="completa">Comprás en un mercado y vendés en otro. El resultado sólo descuenta los costos que cargues.</p>
+      <p class="hint panel-hint" data-solo="simple">Tu operativa: con pesos comprás dólares, con esos dólares conseguís USDT y los vendés por pesos. <button type="button" class="btn ghost small" data-ir-operativa="completa">Ver la calculadora completa</button></p>
+      <p class="hint panel-hint" data-solo="completa"><button type="button" class="btn ghost small" data-ir-operativa="simple">Volver a mi operativa (pesos → USD → USDT → pesos)</button></p>
       <div class="sim-grid">
         <form id="form-sim" class="form" novalidate autocomplete="off">
           <fieldset>
             <legend>Operación</legend>
             <div class="row two">
               <div class="field">
-                <label for="monto">Monto</label>
+                <label for="monto"><span data-solo="completa">Monto</span><span data-solo="simple">Cuántos pesos ponés</span></label>
                 <input id="monto" name="monto" type="text" inputmode="decimal" value="1.000" aria-describedby="monto-echo">
                 <small id="monto-echo" class="echo"></small>
               </div>
-              <div class="field">
+              <div class="field" data-solo="completa">
                 <label for="modo-monto">Expresado en</label>
                 <select id="modo-monto" name="modoMonto">
                   <option value="unidades">Unidades de origen (USD)</option>
@@ -192,7 +193,7 @@
                 </select>
               </div>
             </div>
-            <div class="row two">
+            <div class="row two" data-solo="completa">
               <div class="field">
                 <label for="mercado-compra">Comprás en</label>
                 <select id="mercado-compra" name="mercadoCompra"></select>
@@ -207,7 +208,7 @@
           <fieldset>
             <legend>Precios</legend>
             <div class="field">
-              <label for="cotizacion-base">Cotización base de compra <span class="unit">ARS por unidad</span></label>
+              <label for="cotizacion-base"><span data-solo="completa">Cotización base de compra <span class="unit">ARS por unidad</span></span><span data-solo="simple">A cuánto comprás el dólar <span class="unit">pesos por dólar</span></span></label>
               <div class="with-action">
                 <input id="cotizacion-base" name="cotizacionBase" type="text" inputmode="decimal" aria-describedby="cotizacion-base-echo cotizacion-base-src">
                 <button type="button" class="btn ghost small" id="reset-base" hidden>Usar la del mercado</button>
@@ -226,7 +227,7 @@
               <output id="precio-final" aria-labelledby="precio-final-label">—</output>
             </div>
             <div class="field">
-              <label for="precio-venta">Recibís por unidad <span class="unit">ARS por unidad de destino</span></label>
+              <label for="precio-venta"><span data-solo="completa">Recibís por unidad <span class="unit">ARS por unidad de destino</span></span><span data-solo="simple">A cuánto vendés cada USDT <span class="unit">pesos por USDT</span></span></label>
               <div class="with-action">
                 <input id="precio-venta" name="precioVenta" type="text" inputmode="decimal" aria-describedby="precio-venta-echo precio-venta-src">
                 <button type="button" class="btn ghost small" id="reset-venta" hidden>Usar la del mercado</button>
@@ -246,8 +247,8 @@
                 <input id="conversion" name="conversionPct" type="text" inputmode="decimal" placeholder="No sé" aria-describedby="conversion-echo relacion-hint">
                 <span class="unit" aria-hidden="true">%</span>
               </div>
-              <button type="button" class="btn ghost small" id="relacion-probar">Probar sin costo (0 %) como hipótesis</button>
-              <label class="check"><input type="checkbox" id="relacion-hipotesis"> Es una hipótesis (no lo confirmé)</label>
+              <button type="button" class="btn ghost small" id="relacion-probar" data-solo="completa">Probar sin costo (0 %) como hipótesis</button>
+              <label class="check" data-solo="completa"><input type="checkbox" id="relacion-hipotesis"> Es una hipótesis (no lo confirmé)</label>
               <small id="relacion-hint" class="hint"></small>
               <small id="conversion-echo" class="echo"></small>
               <div id="opc-conversion" class="opciones-usdt" aria-live="polite" hidden></div>
@@ -394,7 +395,7 @@
       <ul id="hist-lista" class="hist-lista"></ul>
     </section>
 
-    <section aria-labelledby="h-exch" class="block" id="sec-exchanges">
+    <section aria-labelledby="h-exch" class="block" id="sec-exchanges" hidden>
       <div class="block-head">
         <h2 id="h-exch">USDT en exchanges</h2>
         <p class="hint">Compra y venta de USDT en unos 35 exchanges (Binance, Binance P2P, Lemon, Belo, Fiwind, Bybit…) y las mejores combinaciones para arbitrar entre ellos. Sólo simulación: Brecha no opera.</p>

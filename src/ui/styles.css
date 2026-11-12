@@ -749,3 +749,20 @@ html[data-plataforma="celular"] body[data-seccion="sec-inicio"] .pestanas { back
 @media (prefers-reduced-motion: reduce) {
   .inicio-titulo .letra, .inicio-bajada, .inicio-texto, .inicio-datos, .inicio-acciones { transition: none; }
 }
+
+/* ---------- Mi operativa (pesos → USD → USDT → pesos): la calculadora con lo justo ---------- */
+body[data-operativa="simple"] [data-solo="completa"], body:not([data-operativa="simple"]) [data-solo="simple"] { display: none !important; }
+body[data-operativa="simple"] #form-sim fieldset:nth-of-type(2) { display: flex; flex-direction: column; }
+body[data-operativa="simple"] #form-sim fieldset:nth-of-type(2) > * { order: 9; }
+body[data-operativa="simple"] #form-sim fieldset:nth-of-type(2) > .field:has(#cotizacion-base) { order: 1 !important; }
+body[data-operativa="simple"] #opc-base { order: 2 !important; }
+body[data-operativa="simple"] #campo-relacion { order: 3 !important; }
+body[data-operativa="simple"] #form-sim fieldset:nth-of-type(2) > .field:has(#precio-venta) { order: 4 !important; }
+body[data-operativa="simple"] #opc-venta { order: 5 !important; }
+/* Menos ruido: sin la lista de cada costo que falta ni las advertencias largas (están en la calculadora completa) */
+body[data-operativa="simple"] .calidad.incompleto .faltan-lista, body[data-operativa="simple"] #resultado .warnings { display: none; }
+body[data-operativa="simple"] #form-sim fieldset:nth-of-type(2) > .field:has(#aumento), body[data-operativa="simple"] #form-sim fieldset:nth-of-type(2) > .computed { display: none !important; }
+body[data-operativa="simple"] #conversion-sentido, body[data-operativa="simple"] #opc-conversion, body[data-operativa="simple"] #form-sim fieldset:first-of-type legend, body[data-operativa="simple"] #form-sim fieldset:nth-of-type(2) legend { display: none !important; }
+
+.chat-claude { max-width: 760px; }
+.chat-claude-pasos { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
