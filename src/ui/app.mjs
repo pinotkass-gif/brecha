@@ -1809,13 +1809,13 @@ function init() {
   else if (sim.avisoConversion) avisar(sim.avisoConversion);
   setInterval(refrescarEdades, 60000);
   registrarSinConexion();
-  // Italiana (la letra de los títulos, en Inicio y en la app): se baja cuando la página ya cargó, para no frenarla.
+  // Playfair Display (la letra de los títulos desde 3.13.2; antes Italiana, muy fina, en Inicio y en la app): se baja cuando la página ya cargó, para no frenarla.
   // Mientras tanto (o sin internet) se usa una serif del sistema.
   const fuentes = () => {
     if (document.querySelector('link[data-fuentes-inicio]')) return;
     const l = document.createElement('link');
     l.rel = 'stylesheet';
-    l.href = 'https://fonts.googleapis.com/css2?family=Italiana&display=swap';
+    l.href = 'https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap';
     l.dataset.fuentesInicio = '';
     document.head.append(l);
   };
