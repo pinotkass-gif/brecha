@@ -739,16 +739,30 @@ function renderResultado(r, entrada) {
     return fila(`Costos fijos: ${cb.texto.toLowerCase()} (${cb.momento})`, moneda === 'ARS' ? formatARS(v) : unidades(v, moneda, 6));
   }).join('');
 
+  // Mi operativa (pedido 12/11/2026: "primero tiene que aparecer el porcentaje que me cobran… sino me estás diciendo
+  // cuánto voy a recibir antes de saber mis costos"): paso a paso en el orden de la operación, el costo antes de lo que recibís.
+  const enOperativa = operativa === 'simple' && esLaOperativa();
+  const num = (v) => formatNumberAR(v, { decimals: 2, minDecimals: 2 });
+  const costoUsd = x.cantidadOrigen.minus(x.unidadesRecibidas);
+  const pctDicho = $('#conversion').value.trim();
+  const pasos = !enOperativa ? '' : `<ol class="paso-a-paso" data-testid="paso-a-paso">
+      <li><strong>Pesos → billete.</strong> Con ${formatARS(x.inversionTotal)} comprás <strong>${num(x.cantidadOrigen)} USD billete</strong> a ${formatARS(x.precioCompraFinal)} cada uno.</li>
+      <li><strong>Billete → USDT: tu costo.</strong> Te cobran ${esc(pctDicho)} %: por ${num(x.cantidadOrigen)} USD recibís <strong>${num(x.unidadesRecibidas)} USDT</strong>. Te cuesta <strong>${num(costoUsd)} USD</strong> (${formatARS(costoUsd.times(x.precioCompraFinal))} al precio del billete).</li>
+      <li><strong>USDT → pesos.</strong> Vendés ${num(x.unidadesRecibidas)} USDT a ${formatARS(x.precioVentaEfectivo)} y recibís <strong>${formatARS(x.capitalFinal)}</strong>.</li>
+    </ol>`;
   const todosNoAplican = r.calidad.desconocidos?.length > 1
     ? '<div class="banner-actions"><button type="button" class="btn ghost small" data-accion-simple="todos-no-aplican">Ninguno de estos existe: marcarlos «no aplica»</button></div>' : '';
   box.innerHTML = `<h3 id="h-res" class="sr-only">Resultado</h3>
     ${nota}
     ${bloqueCalidad(r.calidad, { botonNoAplica, pie: todosNoAplican })}
+    ${pasos}
     <div class="headline ${c}" data-testid="headline">
       <p class="res-title"><span aria-hidden="true">${tit.i}</span> ${tit.t}</p>
       <p class="big" data-testid="resultado-neto">${prefijoResultado(nivel)}${formatARSSigned(x.resultadoNeto)}</p>
-      <p class="roi">Resultado de caja · ROI neto ${nivel === 'incompleto' ? 'como máximo ' : ''}<strong class="${c}" data-testid="roi">${formatPct(x.roiPct)}</strong></p>
+      <p class="roi">${enOperativa ? `Sobre ${formatARS(x.inversionTotal)} que pusiste` : 'Resultado de caja'} · ROI neto ${nivel === 'incompleto' ? 'como máximo ' : ''}<strong class="${c}" data-testid="roi">${formatPct(x.roiPct)}</strong></p>
+      ${enOperativa ? `<p class="hint" data-testid="no-perder">Para no perder, cada USDT lo tenés que vender a más de ${formatARS(x.equilibrioVenta)}.</p>` : ''}
     </div>
+    <div class="detalle-completo"${enOperativa ? ' hidden' : ''}>
     ${bloqueExplicacion(explicarSimple(r, { mismoMercado: compra === venta, unidadOrigen: uo, unidadDestino: ud, conversion: entrada.conversionDicha ?? null }))}
     ${bloqueEconomico(x.resultadoEconomico, x.resultadoNeto, { conceptos: x.fiscal.conceptos })}
     <dl class="kpis">
@@ -765,6 +779,7 @@ function renderResultado(r, entrada) {
       <p class="hint">La brecha compara precios; no es ganancia. El resultado neto incluye los costos cargados.</p>
     </div>
     ${tablaObjetivos(x.objetivosPrecio, `ARS por 1 ${ud}`, nivel)}
+    </div>
     ${avisos.length ? `<ul class="warnings" data-testid="avisos">${avisos.map((a) => `<li>⚠ ${esc(a)}</li>`).join('')}</ul>` : ''}
     <div class="res-actions">${historial?.botones('simple') ?? ''}<button type="button" class="btn ghost small" id="abrir-como-ruta" data-desde="profesional">Abrir como ruta por pasos →</button></div>
     ${analisis?.html('simple', datosAnalisisSimple) ?? ''}
@@ -1604,7 +1619,7 @@ function avisoOcultos() {
   const box = $('#aviso-ocultos');
   if (!box) return;
   const ocultos = rangoNivel(nivelUso) === 0
-    ? [...$('#form-sim').querySelectorAll('[data-desde] input[type="text"]')].filter((i) => i.value.trim() !== '') : [];
+    ? [...$('#form-sim').querySelectorAll('[data-desde] input[type="text"]')].filter((i) => i.value.trim() !== '' && !(operativa === 'simple' && esNoAplica(i.value))) : []; // en mi operativa, «no aplica» es lo normal: no se avisa
   box.hidden = !ocultos.length;
   if (!ocultos.length) { box.innerHTML = ''; return; }
   const nombres = ocultos.map((i) => document.querySelector(`label[for="${i.id}"]`)?.childNodes[0]?.textContent.trim() || i.id);

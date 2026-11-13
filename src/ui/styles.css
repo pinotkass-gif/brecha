@@ -763,6 +763,8 @@ body[data-operativa="simple"] #form-sim fieldset:nth-of-type(2) > * { order: 9; 
 body[data-operativa="simple"] #form-sim fieldset:nth-of-type(2) > .field:has(#cotizacion-base) { order: 1 !important; }
 body[data-operativa="simple"] #blue-calle { order: 1 !important; }
 body[data-operativa="simple"] .opc-retiro { display: none !important; }
+.paso-a-paso { margin: 0 0 10px; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.paso-a-paso li::marker { color: var(--accent); font-weight: 700; }
 body[data-operativa="simple"] #opc-base { order: 2 !important; }
 body[data-operativa="simple"] #campo-relacion { order: 3 !important; }
 body[data-operativa="simple"] #form-sim fieldset:nth-of-type(2) > .field:has(#precio-venta) { order: 4 !important; }
