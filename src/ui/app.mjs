@@ -1752,7 +1752,9 @@ function init() {
   });
   exchanges.alCambiar(() => { opcionesUsdt.render(); renderUsdtTop(); });
   renderUsdtTop();
-  exchanges.actualizar(false); // para «USDT: los 5 que más pagan hoy» (usa la copia si tiene menos de 5 min)
+  // Para «USDT: los 5 que más pagan hoy» (usa la copia si tiene menos de 5 min). Un poco después de arrancar: CriptoYa corta
+  // las ráfagas y al abrir ya se piden los bancos (y, en mi operativa, la calculadora pide estos mismos precios).
+  setTimeout(() => exchanges.actualizar(false), 1500);
   $('#usdt-top').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-usdt-usar]');
     const x = b && usdtTop[Number(b.dataset.usdtUsar)];
