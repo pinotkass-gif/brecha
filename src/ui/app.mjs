@@ -62,6 +62,7 @@ const KEY_SECCION = 'brecha.seccion.v1';
 const SECCIONES = ['sec-inicio', 'sec-simulacion', 'sec-cotizaciones', 'sec-preguntar', 'oportunidades', 'historial'];
 /** Calculadora con lo justo para la operativa del propietario (pesos → billete → USDT → pesos; 12/11/2026) o completa. */
 const KEY_OPERATIVA = 'brecha.operativa.v1';
+const COSTOS_OPERATIVA = ['com-compra', 'com-venta', 'otros', 'impuesto', 'iva', 'transf', 'slippage'];
 let operativa = 'completa'; // se decide en init
 /** Compu: por pestañas (una sección a la vez, como el celular) o todo junto (la página larga de antes). */
 const KEY_VISTA = 'brecha.pantalla.v1'; // ojo: 'brecha.vista.v1' es la vista de la matriz
@@ -438,7 +439,7 @@ function actualizarEtiquetas() {
   const simple = operativa === 'simple';
   $('#conversion-pregunta').textContent = simple ? 'Qué % en USD te cobran los USDT' : mismo ? 'Conversión' : `¿Cuánto te cobran por pasar de ${na} a ${nb}?`;
   $('#relacion-unidad').textContent = simple ? '% arriba del dólar (obligatorio)' : mismo ? 'no hace falta: comprás y vendés el mismo dólar' : `${UNIDAD_SENTIDO[$('#conversion-sentido').value] ?? UNIDAD_SENTIDO.cobran} (obligatorio)`;
-  $('#relacion-hint').textContent = simple ? 'Lo que pagás de más por cada USDT, en dólares billete. Por ejemplo 2 = cada USDT te sale 1,02 dólares. Si te los dan 1 a 1, poné 0.' : mismo
+  $('#relacion-hint').textContent = simple ? 'Lo que pagás de más por cada USDT, en dólares billete. Por ejemplo 2 = cada USDT te sale 1,02 dólares. Si te los dan 1 a 1, poné 0. No se suma ningún otro costo (comisiones, impuestos, traspasos): si alguna vez aparece uno, cargalo en la calculadora completa.' : mismo
     ? ''
     : `Comprás ${a.instrumento} y vendés ${b.instrumento}: no son lo mismo, y pasar de uno al otro suele tener un costo. Cargá el % que te cobran en esa operación (por ejemplo 1,5) o, si pagás cada ${b.unidad} más caro que el ${a.unidad} (por ejemplo el oficial + 2 %), elegí «Pagás más caro». Si no te cobran nada, poné 0. Si no lo sabés, no hay resultado; podés probar sin costo marcándolo como hipótesis.`;
   for (const id of ['otros-cobro', 'transf-cobro']) {
@@ -869,9 +870,10 @@ function aplicarOperativa(v, { guardar = true } = {}) {
   operativa = v === 'completa' ? 'completa' : 'simple';
   if (guardar) storage.set(KEY_OPERATIVA, operativa);
   document.body.dataset.operativa = operativa;
-  // Él recibe los USDT directo en la wallet donde los vende (12/11/2026): no hay traspaso entre wallets.
-  // Sólo si el campo está vacío ("No sé"): nunca pisa algo que cargó.
-  if (operativa === 'simple' && $('#transf').value.trim() === '') $('#transf').value = 'no aplica';
+  // Él recibe los USDT directo en la wallet donde los vende y, aparte del % de los USDT, no le cobran nada más
+  // (12/11/2026: "no necesito pasar usdt por otra wallet"; "¿te cobran algo al vender?" → "No, nada más").
+  // Sólo los campos vacíos ("No sé"): nunca pisa algo que cargó en la calculadora completa.
+  if (operativa === 'simple') for (const id of COSTOS_OPERATIVA) if ($(`#${id}`).value.trim() === '') $(`#${id}`).value = 'no aplica';
   if (operativa === 'simple' && !esLaOperativa()) {
     const cambiaMercado = $('#mercado-compra').value !== 'blue' || $('#mercado-venta').value !== 'cripto';
     const eraUnidades = $('#modo-monto').value !== 'ars';
