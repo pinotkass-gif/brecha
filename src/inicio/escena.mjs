@@ -90,8 +90,8 @@ export function crearEscena(canvas, { liviano = false, figura = null } = {}) {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#f8f5ef');
-  scene.fog = new THREE.FogExp2('#f8f5ef', 0.01);
+  scene.background = new THREE.Color('#f0ebdd');
+  scene.fog = new THREE.FogExp2('#f0ebdd', 0.01);
   scene.environment = entorno(renderer);
 
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
