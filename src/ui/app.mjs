@@ -59,7 +59,8 @@ const rangoNivel = (n) => NIVELES_USO.indexOf(n);
 /** Versión: 'celular' (pestañas abajo, compacta) o 'web' (compu). La define index.html (scripts/variantes.mjs). */
 const PLATAFORMA = document.documentElement.dataset.plataforma === 'celular' ? 'celular' : 'web';
 const KEY_SECCION = 'brecha.seccion.v1';
-const SECCIONES = ['sec-inicio', 'sec-simulacion', 'sec-cotizaciones', 'sec-preguntar', 'oportunidades', 'historial'];
+// Orden pedido el 13/11/2026: primero las cotizaciones (dólar y los 5 USDT que más pagan), después la operación, después preguntar
+const SECCIONES = ['sec-inicio', 'sec-cotizaciones', 'sec-simulacion', 'sec-preguntar', 'oportunidades', 'historial'];
 /** Calculadora con lo justo para la operativa del propietario (pesos → billete → USDT → pesos; 12/11/2026) o completa. */
 const KEY_OPERATIVA = 'brecha.operativa.v1';
 const COSTOS_OPERATIVA = ['com-compra', 'com-venta', 'otros', 'impuesto', 'iva', 'transf', 'slippage'];
@@ -876,6 +877,32 @@ function evolucionSimple(id, lista) {
     if (!x.ok) return { at: c.at, ok: false, motivo: x.datosInsuficientes ? 'DATOS INSUFICIENTES' : x.errors[0]?.message ?? 'No se pudo calcular.' };
     return { at: c.at, ok: true, roiPct: Number(x.result.roiPct.toFixed(6)), resultado: `${x.calidad.nivel === 'incompleto' ? '≤ ' : x.calidad.nivel === 'estimado' ? '≈ ' : ''}${formatARSSigned(x.result.resultadoNeto)}`, nivel: x.calidad.nivel };
   });
+}
+
+/* ---------- Cotizaciones: los 5 exchanges que más pagan por el USDT hoy (pedido 13/11/2026) ---------- */
+let usdtTop = [];
+function renderUsdtTop() {
+  const el = $('#usdt-top');
+  if (!el || !exchanges) return;
+  const d = exchanges.datosActuales();
+  const pref = exchanges.preferencias();
+  const cabeza = '<div class="opc-head"><p><strong>USDT: los 5 que más pagan hoy</strong> · lo que te pagan por cada USDT al venderlo por pesos</p></div>';
+  if (!d?.ars) {
+    const e = exchanges.estado();
+    usdtTop = [];
+    el.innerHTML = `${cabeza}<p class="hint">${esc(e.estado === 'error' && e.error ? e.error : 'Trayendo los precios de los exchanges…')}</p>`;
+    return;
+  }
+  const ops = opcionesLado(prepararPrecios(d.ars, { at: d.at, conComisiones: pref.conComisiones, incluirP2P: pref.incluirP2P }), 'venta').opciones.slice(0, 5);
+  usdtTop = ops.map((x) => ({ clave: 'venta', lado: 'venta', fiat: 'ARS', id: x.id, nombre: x.nombre, precio: x.precio, at: d.at, conComisiones: pref.conComisiones }));
+  el.innerHTML = `${cabeza}
+    <ol class="opc-lista">${ops.map((x, i) => `<li class="opc-item${i === 0 ? ' primera' : ''}" data-testid="usdt-top-${i}">
+      <span class="opc-nombre">${i + 1}. ${esc(x.nombre)}</span>
+      <span class="opc-precio">${formatARS(x.precio)}</span>
+      <span class="opc-rinde igual">${x.p2p ? 'P2P' : 'exchange'}</span>
+      <button type="button" class="btn small" data-usdt-usar="${i}" aria-label="Usar ${esc(x.nombre)} como precio de venta en la calculadora">Usar</button>
+    </li>`).join('')}</ol>
+    <p class="hint">CriptoYa, ${pref.conComisiones ? 'con' : 'sin'} comisiones, precios de las ${hora(d.at)}. «Usar» lo pone como precio de venta en la calculadora. Verificalo en el exchange antes de operar (en los P2P, el aviso).</p>`;
 }
 
 /* ---------- Mi operativa ---------- */
@@ -1723,7 +1750,16 @@ function init() {
     exchanges, bancos, getContexto: contextoOpciones, onUsar: usarOpcion, onCargarRetiro: cargarRetiro,
     onIrAManual: () => { mostrarSeccion('sec-cotizaciones'); bancos.enfocarManual(); },
   });
-  exchanges.alCambiar(() => opcionesUsdt.render());
+  exchanges.alCambiar(() => { opcionesUsdt.render(); renderUsdtTop(); });
+  renderUsdtTop();
+  exchanges.actualizar(false); // para «USDT: los 5 que más pagan hoy» (usa la copia si tiene menos de 5 min)
+  $('#usdt-top').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-usdt-usar]');
+    const x = b && usdtTop[Number(b.dataset.usdtUsar)];
+    if (!x) return;
+    usarOpcion(x);
+    irASimulacion();
+  });
   bancos.alCambiar(() => opcionesUsdt.render());
   crearBonos({
     root: $('#bonos-campos'), storage, avisar,
