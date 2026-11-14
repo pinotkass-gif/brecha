@@ -777,3 +777,22 @@ body[data-operativa="simple"] #conversion-sentido, body[data-operativa="simple"]
 
 .chat-claude { max-width: 760px; }
 .chat-claude-pasos { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+
+/* «Hoy» arriba de la calculadora: sólo en el celular (14/11/2026) */
+.resumen-hoy { display: none; }
+html[data-plataforma="celular"] .resumen-hoy { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.rh-titulo { font-family: var(--titulo); font-size: 26px; font-weight: 600; }
+.rh-dolar { width: 100%; border-collapse: collapse; font-size: 16px; }
+.rh-dolar caption, .rh-sub { text-align: left; font-weight: 700; font-size: 14px; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; margin: 2px 0 4px; }
+.rh-dolar th, .rh-dolar td { padding: 5px 0; border-bottom: 1px solid var(--border); text-align: right; }
+.rh-dolar thead th { font-size: 13px; color: var(--muted); }
+.rh-dolar tbody th { text-align: left; font-weight: 600; }
+.rh-dolar td { font-weight: 700; font-variant-numeric: tabular-nums; }
+.rh-calle th, .rh-calle td { color: var(--accent); }
+.rh-usdt { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.rh-usdt li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; font-size: 16px; padding: 3px 0; border-bottom: 1px solid var(--border); }
+.rh-usdt li:first-child strong { color: var(--pos); }
+.rh-usdt strong { font-variant-numeric: tabular-nums; }
+.rh-nombre { overflow-wrap: anywhere; }
+.rh-pie { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+html[data-plataforma="celular"] #nivel-desc { display: none; } /* en el celular, «Hoy» lo más arriba posible */

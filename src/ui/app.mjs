@@ -488,6 +488,7 @@ function renderCalle() {
 function guardarCalle(nuevo) {
   calle = nuevo;
   storage.set(KEY_CALLE, calle);
+  renderResumenHoy();
   if ($('#mercado-compra').value === 'blue') { sim.overrideBase = false; delete sim.exch.base; if (sim.guardada) sim.guardada.base = false; }
   sincronizarPrecios();
   recalcular();
@@ -890,6 +891,7 @@ function renderUsdtTop() {
   if (!d?.ars) {
     const e = exchanges.estado();
     usdtTop = [];
+    renderResumenHoy();
     el.innerHTML = `${cabeza}<p class="hint">${esc(e.estado === 'error' && e.error ? e.error : 'Trayendo los precios de los exchanges…')}</p>`;
     return;
   }
@@ -903,6 +905,27 @@ function renderUsdtTop() {
       <button type="button" class="btn small" data-usdt-usar="${i}" aria-label="Usar ${esc(x.nombre)} como precio de venta en la calculadora">Usar</button>
     </li>`).join('')}</ol>
     <p class="hint">CriptoYa, ${pref.conComisiones ? 'con' : 'sin'} comisiones, precios de las ${hora(d.at)}. «Usar» lo pone como precio de venta en la calculadora. Verificalo en el exchange antes de operar (en los P2P, el aviso).</p>`;
+  renderResumenHoy();
+}
+
+/* ---------- Celular: «Hoy» arriba de la calculadora (pedido 14/11/2026: "entrar y ver cotización de dólar, cotización
+   del USDT así resumido y abajo la calculadora") ---------- */
+function renderResumenHoy() {
+  const el = $('#resumen-hoy');
+  if (!el) return;
+  const pesos = (v) => (v ? formatARS(v) : '—');
+  const dolar = (id, nombre) => `<tr><th scope="row">${nombre}</th><td data-testid="hoy-${id}-venta">${pesos(precioMercado(id, 'venta'))}</td><td>${pesos(precioMercado(id, 'compra'))}</td></tr>`;
+  const filaCalle = calle ? `<tr class="rh-calle"><th scope="row">Tu blue de la calle</th><td data-testid="hoy-calle">${formatARS(toDec(calle.venta))}</td><td>—</td></tr>` : '';
+  const d = exchanges?.datosActuales();
+  const usdt = usdtTop.length
+    ? `<ol class="rh-usdt">${usdtTop.map((x, i) => `<li data-testid="hoy-usdt-${i}"><span class="rh-nombre">${i + 1}. ${esc(x.nombre)}</span><strong>${formatARS(x.precio)}</strong><button type="button" class="btn small" data-usdt-usar="${i}" aria-label="Usar ${esc(x.nombre)} como precio de venta">Usar</button></li>`).join('')}</ol>`
+    : '<p class="hint">Trayendo los precios de los exchanges…</p>';
+  el.innerHTML = `<h2 class="rh-titulo">Hoy</h2>
+    <table class="rh-dolar"><caption>Dólar</caption><thead><tr><th scope="col"></th><th scope="col">Pagás</th><th scope="col">Te pagan</th></tr></thead>
+      <tbody>${dolar('oficial', 'Oficial')}${dolar('blue', 'Blue')}${filaCalle}</tbody></table>
+    <p class="rh-sub">USDT · los 5 que más te pagan</p>
+    ${usdt}
+    <p class="hint rh-pie">DolarAPI${d ? ` y CriptoYa (${hora(d.at)})` : ''}. <button type="button" class="btn ghost small" data-ver-cotizaciones>Ver todas las cotizaciones</button></p>`;
 }
 
 /* ---------- Mi operativa ---------- */
@@ -954,6 +977,7 @@ function renderTodo() {
   exchanges?.refrescar(); // los recorridos con dólares usan estas cotizaciones
   bancos?.render(); // "se aleja mucho del oficial" depende de estas cotizaciones
   inicio?.actualizarDatos();
+  renderResumenHoy();
 }
 
 /* ---------- Modos: calculadora simple / simulador por pasos ---------- */
@@ -1526,7 +1550,8 @@ function bindPestanas() {
     if (a.id === 'otra-version') { a.textContent = PLATAFORMA === 'celular' ? 'Abrir la versión para compu' : 'Abrir la versión celular'; a.hidden = false; }
   }
   // La primera vez, la presentación; después, la última pestaña de trabajo
-  aplicarVista(vista, { inicial: storage.get(KEY_INICIO_VISTO) ? ultimaSeccion() : 'sec-inicio' });
+  // En el celular siempre abre en Calcular, con «Hoy» arriba (pedido 14/11/2026); en la compu, donde quedó
+  aplicarVista(vista, { inicial: storage.get(KEY_INICIO_VISTO) ? (PLATAFORMA === 'celular' ? 'sec-simulacion' : ultimaSeccion()) : 'sec-inicio' });
 }
 /** Publicada (https): un service worker guarda la app para abrirla sin internet. En la compu local no se usa. */
 function registrarSinConexion() {
@@ -1755,6 +1780,14 @@ function init() {
   // Para «USDT: los 5 que más pagan hoy» (usa la copia si tiene menos de 5 min). Un poco después de arrancar: CriptoYa corta
   // las ráfagas y al abrir ya se piden los bancos (y, en mi operativa, la calculadora pide estos mismos precios).
   setTimeout(() => exchanges.actualizar(false), 1500);
+  $('#resumen-hoy').addEventListener('click', (ev) => {
+    if (ev.target.closest('[data-ver-cotizaciones]')) { mostrarSeccion('sec-cotizaciones'); return; }
+    const b = ev.target.closest('[data-usdt-usar]');
+    const x = b && usdtTop[Number(b.dataset.usdtUsar)];
+    if (!x) return;
+    usarOpcion(x);
+    $('#precio-venta').scrollIntoView({ block: 'center', behavior: 'smooth' });
+  });
   $('#usdt-top').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-usdt-usar]');
     const x = b && usdtTop[Number(b.dataset.usdtUsar)];
