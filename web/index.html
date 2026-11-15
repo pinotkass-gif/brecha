@@ -64,6 +64,7 @@
     <button type="button" data-seccion="sec-inicio" class="pestana-inicio"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.6L20 9.4l-4 4 1 5.6-5-2.8-5 2.8 1-5.6-4-4 5.4-.8z"/></svg><span>Inicio</span></button>
     <button type="button" data-seccion="sec-cotizaciones"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 4 7-8"/><path d="M15 8h5v5"/></svg><span>Cotizaciones</span></button>
     <button type="button" data-seccion="sec-simulacion"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M14 11h2M8 15h2M14 15h2"/></svg><span>Calcular</span></button>
+    <button type="button" data-seccion="sec-operaciones"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M8 10l2.5 2.5L16 8M8 16h8"/></svg><span>Operaciones</span></button>
     <button type="button" data-seccion="sec-preguntar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-8l-4 3v-3H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M8 9h8M8 12h5"/></svg><span>Preguntar</span></button>
     <button type="button" data-seccion="oportunidades" data-desde="avanzado"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg><span>Mercados</span></button>
     <button type="button" data-seccion="historial"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><span>Historial</span></button>
@@ -344,6 +345,14 @@
         <summary>Mis plataformas: perfiles de costos</summary>
         <div id="plataformas-campos"></div>
       </details>
+    </section>
+
+    <section aria-labelledby="h-ops" class="block" id="sec-operaciones">
+      <div class="block-head">
+        <h2 id="h-ops">Operaciones hechas <span class="unit" id="ops-cuenta"></span></h2>
+        <p class="hint">Cada vuelta que diste de verdad (pesos → billete → USDT → pesos), con la ganancia por día. Si al final ganaste otra cosa, corregila: la diferencia es un costo que no tuvimos en cuenta y el sistema lo va aprendiendo.</p>
+      </div>
+      <div id="operaciones"></div>
     </section>
 
     <section aria-labelledby="h-preg" class="block" id="sec-preguntar">

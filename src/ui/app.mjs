@@ -25,6 +25,9 @@ import { crearExchanges } from './exchanges.mjs';
 import { crearOpcionesUsdt } from './opciones-usdt.mjs';
 import { crearBancos } from './bancos.mjs';
 import { crearInicio } from './inicio.mjs';
+import { crearOperaciones } from './operaciones.mjs';
+import { interpretarOperacion } from '../chat/operaciones.mjs';
+import { ajustarConAprendido } from '../operaciones/modelo.mjs';
 import { conversionComprando, conversionVendiendo, prepararPrecios, opcionesLado, nombreExchange } from '../exchanges/arbitraje.mjs';
 import { KEY_REGISTRO, restaurarRegistro, agregarMuestra, compararExchanges, exchangesDelRegistro } from '../exchanges/registro.mjs';
 import { resumenDeSimple, resumenDeRuta, trazaDeSimple } from '../historial/modelo.mjs';
@@ -47,6 +50,9 @@ let exchanges = null;
 let opcionesUsdt = null;
 let bancos = null;
 let inicio = null;
+let operaciones = null;
+/** La operativa que muestra la calculadora (para «Anotar como hecha»), o null. */
+let ultimaOperativa = null;
 const KEY_TEMA = 'brecha.tema.v1';
 const KEY_NIVEL = 'brecha.nivel.v1';
 /** Niveles de uso: cada uno muestra más herramientas. Nada se borra: lo oculto se ve subiendo de nivel. */
@@ -61,7 +67,7 @@ const rangoNivel = (n) => NIVELES_USO.indexOf(n);
 const PLATAFORMA = document.documentElement.dataset.plataforma === 'celular' ? 'celular' : 'web';
 const KEY_SECCION = 'brecha.seccion.v1';
 // Orden pedido el 13/11/2026: primero las cotizaciones (dólar y los 5 USDT que más pagan), después la operación, después preguntar
-const SECCIONES = ['sec-inicio', 'sec-cotizaciones', 'sec-simulacion', 'sec-preguntar', 'oportunidades', 'historial'];
+const SECCIONES = ['sec-inicio', 'sec-cotizaciones', 'sec-simulacion', 'sec-operaciones', 'sec-preguntar', 'oportunidades', 'historial'];
 /** Calculadora con lo justo para la operativa del propietario (pesos → billete → USDT → pesos; 12/11/2026) o completa. */
 const KEY_OPERATIVA = 'brecha.operativa.v1';
 const COSTOS_OPERATIVA = ['com-compra', 'com-venta', 'otros', 'impuesto', 'iva', 'transf', 'slippage'];
@@ -714,6 +720,7 @@ function renderResultado(r, entrada) {
   const compra = $('#mercado-compra').value;
   const venta = $('#mercado-venta').value;
   box.dataset.nivel = r.ok ? r.calidad.nivel : r.datosInsuficientes ? 'insuficiente' : 'error';
+  if (!r.ok) ultimaOperativa = null;
   const nota = sim.notaGuardada ? `<div class="banner" role="status" data-testid="nota-guardada"><p>${esc(sim.notaGuardada)}</p></div>` : '';
   if (!r.ok) {
     if (r.datosInsuficientes) {
@@ -749,6 +756,11 @@ function renderResultado(r, entrada) {
   const num = (v) => formatNumberAR(v, { decimals: 2, minDecimals: 2 });
   const costoUsd = x.cantidadOrigen.minus(x.unidadesRecibidas);
   const pctDicho = $('#conversion').value.trim();
+  ultimaOperativa = enOperativa && entrada.conversionDicha?.sentido === 'sobreprecio'
+    ? { pesos: x.inversionTotal, billete: x.precioCompraFinal, pct: entrada.conversionDicha.pct, venta: x.precioVentaEfectivo, donde: sim.exch.venta?.nombre ?? '' } : null;
+  const apr = operaciones?.aprendizaje();
+  const ajustada = ultimaOperativa && apr?.n && apr.costoPct.gt(0) ? ajustarConAprendido(x.resultadoNeto, x.inversionTotal, apr) : null;
+  const conAprendido = ajustada ? `<p class="hint" data-testid="con-aprendido">Con lo que aprendimos de ${apr.n === 1 ? 'tu operación corregida' : `tus ${apr.n} operaciones corregidas`} (se te van en promedio ${formatPct(apr.costoPct, { signed: false })} de lo que ponés en costos que la cuenta no ve), en la realidad te quedarían unos <strong>${formatARSSigned(ajustada)}</strong>.</p>` : '';
   const pasos = !enOperativa ? '' : `<ol class="paso-a-paso" data-testid="paso-a-paso">
       <li><strong>Pesos → billete.</strong> Con ${formatARS(x.inversionTotal)} comprás <strong>${num(x.cantidadOrigen)} USD billete</strong> a ${formatARS(x.precioCompraFinal)} cada uno.</li>
       <li><strong>Billete → USDT: tu costo.</strong> Te cobran ${esc(pctDicho)} %: por ${num(x.cantidadOrigen)} USD recibís <strong>${num(x.unidadesRecibidas)} USDT</strong>. Te cuesta <strong>${num(costoUsd)} USD</strong> (${formatARS(costoUsd.times(x.precioCompraFinal))} al precio del billete).</li>
@@ -765,6 +777,7 @@ function renderResultado(r, entrada) {
       <p class="big" data-testid="resultado-neto">${prefijoResultado(nivel)}${formatARSSigned(x.resultadoNeto)}</p>
       <p class="roi">${enOperativa ? `Sobre ${formatARS(x.inversionTotal)} que pusiste` : 'Resultado de caja'} · ROI neto ${nivel === 'incompleto' ? 'como máximo ' : ''}<strong class="${c}" data-testid="roi">${formatPct(x.roiPct)}</strong></p>
       ${enOperativa ? `<p class="hint" data-testid="no-perder">Para no perder, cada USDT lo tenés que vender a más de ${formatARS(x.equilibrioVenta)}.</p>` : ''}
+      ${conAprendido}
     </div>
     <div class="detalle-completo"${enOperativa ? ' hidden' : ''}>
     ${bloqueExplicacion(explicarSimple(r, { mismoMercado: compra === venta, unidadOrigen: uo, unidadDestino: ud, conversion: entrada.conversionDicha ?? null }))}
@@ -785,7 +798,7 @@ function renderResultado(r, entrada) {
     ${tablaObjetivos(x.objetivosPrecio, `ARS por 1 ${ud}`, nivel)}
     </div>
     ${avisos.length ? `<ul class="warnings" data-testid="avisos">${avisos.map((a) => `<li>⚠ ${esc(a)}</li>`).join('')}</ul>` : ''}
-    <div class="res-actions">${historial?.botones('simple') ?? ''}<button type="button" class="btn ghost small" id="abrir-como-ruta" data-desde="profesional">Abrir como ruta por pasos →</button></div>
+    <div class="res-actions">${ultimaOperativa ? '<button type="button" class="btn small anotar-hecha" id="anotar-hecha" data-testid="anotar-hecha">Anotar como hecha</button>' : ''}${historial?.botones('simple') ?? ''}<button type="button" class="btn ghost small" id="abrir-como-ruta" data-desde="profesional">Abrir como ruta por pasos →</button></div>
     ${analisis?.html('simple', datosAnalisisSimple) ?? ''}
     <details class="detail" data-desde="avanzado">
       <summary>Detalle del cálculo</summary>
@@ -1078,12 +1091,21 @@ function bindModos() {
     $(siguiente === 'rutas' ? '#tab-rutas' : '#tab-simple').focus();
   });
   $('#resultado').addEventListener('click', (ev) => {
+    if (ev.target.id === 'anotar-hecha') { anotarDesdeCalculadora(); return; }
     if (ev.target.id !== 'abrir-como-ruta') return;
     const conv = rutas.cargarDesdeSimple(leerFormulario(), $('#mercado-compra').value, $('#mercado-venta').value);
     if (!conv.ok) return;
     cambiarModo('rutas');
     irASimulacion();
   });
+}
+
+/** «Anotar como hecha»: la operativa de la calculadora pasa a Operaciones (con la fecha de hoy). */
+function anotarDesdeCalculadora() {
+  if (!ultimaOperativa || !operaciones) return;
+  const r = operaciones.anotar(ultimaOperativa, 'calculadora');
+  if (!r.ok) { avisar(r.error); return; }
+  avisar(`Anotada en Operaciones: ganancia calculada ${formatARSSigned(r.calc.ganancia)}. Si ganaste otra cosa, corregila ahí.`);
 }
 
 /** Hipótesis explícita: conversión sin costo (0 %), marcada como hipótesis (el resultado queda ESTIMADO, nunca "completo"). */
@@ -1537,6 +1559,42 @@ function herramientasParaClaude() {
       },
     },
     {
+      name: 'anotar_operacion',
+      description: 'Anota en la pestaña Operaciones una vuelta que el usuario YA HIZO de verdad (no una simulación): pesos que puso, precio del dólar billete, % arriba del dólar que pagó por cada USDT y precio al que vendió cada USDT. Calcula la ganancia y, si hay operaciones corregidas, cuánto le quedaría con lo aprendido. Si falta un dato, preguntalo antes; no lo supongas. dia = AAAA-MM-DD si no fue hoy.',
+      input_schema: { type: 'object', properties: { pesos: { type: 'number' }, precio_dolar: { type: 'number' }, pct_usdt: { type: 'number' }, precio_venta_usdt: { type: 'number' }, donde: { type: 'string', description: 'dónde vendió (opcional)' }, dia: { type: 'string' } }, required: ['pesos', 'precio_dolar', 'pct_usdt', 'precio_venta_usdt'] },
+      run(i) {
+        const r = operaciones.anotar({ pesos: String(i.pesos), billete: String(i.precio_dolar), pct: String(i.pct_usdt), venta: String(i.precio_venta_usdt), donde: i.donde ? String(i.donde) : '', dia: i.dia ? String(i.dia) : undefined }, 'claude');
+        if (!r.ok) throw new Error(r.error);
+        return { ok: true, dia: r.op.dia, dolares: n(r.calc.usd), usdt: n(r.calc.usdt), pesos_cobrados: n(r.calc.cobrado), ganancia_calculada: n(r.calc.ganancia), ganancia_pct: n(r.calc.gananciaPct), con_lo_aprendido: r.ajustada ? n(r.ajustada) : null, operaciones_corregidas: r.apr.n };
+      },
+    },
+    {
+      name: 'corregir_operacion',
+      description: 'Corrige una operación anotada con lo que el usuario REALMENTE ganó (en pesos; negativo si perdió). Sin id, corrige la última anotada. motivo = qué costo no se tuvo en cuenta, si lo sabe. Si te dice cuánto le quedó en total (no la ganancia), pasá cobrado = true. Devuelve la diferencia con la cuenta y lo aprendido.',
+      input_schema: { type: 'object', properties: { ganancia_real: { type: 'number' }, motivo: { type: 'string' }, cobrado: { type: 'boolean' }, id: { type: 'string' } }, required: ['ganancia_real'] },
+      run(i) {
+        const r = operaciones.corregir({ id: i.id ? String(i.id) : null, real: String(i.ganancia_real), motivo: i.motivo ? String(i.motivo) : '', cobrado: i.cobrado === true });
+        if (!r.ok) throw new Error(r.error);
+        const x = r.calc;
+        return { ok: true, dia: r.op.dia, ganancia_calculada: n(x.ganancia), ganancia_real: n(x.real), diferencia_no_contada: n(x.dif), diferencia_pct_de_lo_puesto: n(x.difPct),
+          equivale_a: x.equivale ? { billete_mas_caro_por_dolar: n(x.equivale.billeteMasCaro), pesos_menos_por_usdt_al_vender: n(x.equivale.ventaMenos), comision_al_vender_pct: n(x.equivale.comisionVentaPct) } : null,
+          aprendido: { operaciones_corregidas: r.apr.n, costo_promedio_pct: n(r.apr.costoPct) } };
+      },
+    },
+    {
+      name: 'ver_operaciones',
+      description: 'Operaciones hechas que anotó el usuario, por día (el más nuevo primero, hasta 14 días): pesos puestos, ganancia (real si la corrigió, si no calculada) y cada vuelta. También lo aprendido (costo promedio que la cuenta no ve).',
+      input_schema: { type: 'object', properties: {} },
+      run() {
+        const a = operaciones.aprendizaje();
+        return {
+          dias: operaciones.porDia().slice(0, 14).map((d) => ({ dia: d.dia, vueltas: d.n, pesos: n(d.pesos), ganancia: n(d.ganancia), ganancia_pct: n(d.gananciaPct), corregidas: d.corregidas,
+            operaciones: d.ops.map(({ op, calc }) => ({ id: op.id, pesos: Number(op.pesos), precio_dolar: Number(op.billete), pct_usdt: Number(op.pct), precio_venta_usdt: Number(op.venta), donde: op.donde || null, ganancia_calculada: n(calc.ganancia), ganancia_real: calc.real === null ? null : n(calc.real), motivo: op.motivo || null })) })),
+          aprendido: a.n ? { operaciones_corregidas: a.n, costo_promedio_pct: n(a.costoPct), motivos: a.motivos.map((m) => ({ motivo: m.motivo, veces: m.veces, pesos: n(m.pesos) })) } : null,
+        };
+      },
+    },
+    {
       name: 'guardar_cotizacion_galicia',
       description: 'Guarda la cotización del dólar en Banco Galicia que dicta el usuario (Galicia no se puede traer sola). venta = lo que paga por dólar (obligatoria); compra = lo que le pagan (opcional).',
       input_schema: { type: 'object', properties: { venta: { type: 'number' }, compra: { type: 'number' } }, required: ['venta'] },
@@ -1838,8 +1896,15 @@ function init() {
     getSimulaciones: () => historial.registros(), evolucion: evolucionSimple,
   });
   analisis.enlazar($('#resultado'), 'simple', datosAnalisisSimple);
+  operaciones = crearOperaciones({
+    root: $('#operaciones'), storage, avisar,
+    deCalculadora: () => (ultimaOperativa ? Object.fromEntries(Object.entries(ultimaOperativa).map(([k, v]) => [k, typeof v === 'string' ? v : formatNumberAR(v, { decimals: k === 'pesos' ? 2 : 4, minDecimals: 0 })])) : null),
+    onCambio: () => recalcular(), // «lo aprendido» se ve en la calculadora
+  });
   crearChat({
     root: $('#chat'), storage,
+    operaciones: { anotar: (d, o) => operaciones.anotar(d, o), corregir: (c) => operaciones.corregir(c), porDia: () => operaciones.porDia(), hoy: () => operaciones.hoy(), ayer: () => operaciones.ayer() },
+    onIrAOperaciones: () => mostrarSeccion('sec-operaciones'),
     precioDeHoy: (id, punta) => { const v = precioMercado(id, punta); return v ? { valor: v, texto: textoFuente(id, punta, false) } : null; },
     onAbrirCalculadora: (a) => (a?.tipo === 'galicia' ? usarGaliciaEnCalculadora() : abrirEscenarioEnCalculadora(a)),
     bancos: { guardarManual: (id, v) => bancos.guardarManual(id, v), fila: (id) => bancos.fila(id), referencia: () => bancos.referencia() },

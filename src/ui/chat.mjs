@@ -7,6 +7,7 @@ import { crearFuenteHistorico } from '../historico/fuente.mjs';
 import { interpretarEscenario, calcularEscenario, MERCADOS_CALCULADORA } from '../chat/escenario.mjs';
 import { interpretarExchanges, responderExchanges, responderPromedio } from '../chat/exchanges.mjs';
 import { interpretarGalicia, responderGalicia } from '../chat/bancos.mjs';
+import { interpretarOperacion, responderAnotar, responderCorregir, responderVer } from '../chat/operaciones.mjs';
 import { crearClaude, pareceClave, KEY_CLAVE, MODELO } from '../chat/claude.mjs';
 import { formatNumberAR, parseNumberAR } from '../engine/format.mjs';
 import { esc } from './comun.mjs';
@@ -38,7 +39,7 @@ function restaurar(g) {
     const accion = a && a.tipo === 'galicia' ? { tipo: 'galicia' } : a && a.tipo === 'calculadora' && a.compra in MERCADOS_CALCULADORA && a.venta in MERCADOS_CALCULADORA && ['ars', 'unidades'].includes(a.modo)
       ? { tipo: 'calculadora', compra: a.compra, venta: a.venta, modo: a.modo, monto: texto(a.monto, 40), base: texto(a.base, 40), precioVenta: texto(a.precioVenta, 40), conversionPct: texto(a.conversionPct, 40), sentido: ['cobran', 'sobreprecio', 'dan'].includes(a.sentido) ? a.sentido : 'cobran',
         ...(a.costos && typeof a.costos === 'object' ? { costos: costosGuardados(a.costos), ...(a.origen === 'exchanges' ? { origen: 'exchanges' } : {}) } : {}) } : null;
-    return [{ rol: 'brecha', respuesta: { ok: r.ok === true, frases: textos(r.frases, 20, 1000), avisos: textos(r.avisos, 10, 500), tabla, series, unidad: r.unidad === '%' ? '%' : r.unidad === 'ARS' ? 'ARS' : '', fuente: texto(r.fuente, 300), accion, verExchanges: r.verExchanges === true } }];
+    return [{ rol: 'brecha', respuesta: { ok: r.ok === true, frases: textos(r.frases, 20, 1000), avisos: textos(r.avisos, 10, 500), tabla, series, unidad: r.unidad === '%' ? '%' : r.unidad === 'ARS' ? 'ARS' : '', fuente: texto(r.fuente, 300), accion, verExchanges: r.verExchanges === true, verOperaciones: r.verOperaciones === true } }];
   });
 }
 
@@ -95,6 +96,7 @@ function htmlRespuesta(r, i) {
   const frases = r.frases.map((f) => `<p>${esc(f)}</p>`).join('');
   const botones = [
     r.accion ? `<button type="button" class="btn small" data-abrir-calculadora="${i}">${r.accion.tipo === 'galicia' ? 'Usarla en la calculadora' : 'Abrir en la calculadora'}</button>` : '',
+    r.verOperaciones ? '<button type="button" class="btn small" data-ir-operaciones>Ver en Operaciones</button>' : '',
   ].join('');
   const accion = botones ? `<div class="banner-actions">${botones}</div>` : '';
   const avisos = r.avisos?.length ? `<ul class="chat-avisos">${r.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>` : '';
@@ -113,7 +115,7 @@ function ayudaEscenario(motivo) {
 /**
  * @param {{root: HTMLElement, storage: {get: Function, set: Function, trySet: Function}, ahora?: () => Date, fetch?: typeof fetch}} deps
  */
-export function crearChat({ root, storage, ahora = () => new Date(), fetch: f, precioDeHoy = () => null, onAbrirCalculadora = () => {}, exchanges = null, onIrAExchanges = () => {}, bancos = null, herramientasClaude = [] }) {
+export function crearChat({ root, storage, ahora = () => new Date(), fetch: f, precioDeHoy = () => null, onAbrirCalculadora = () => {}, exchanges = null, onIrAExchanges = () => {}, bancos = null, herramientasClaude = [], operaciones = null, onIrAOperaciones = () => {} }) {
   const fuente = crearFuenteHistorico({ storage, ahora, fetch: f });
   // Claude (si pegaste tu clave): responde con herramientas que leen los datos de la app; sin clave, el reconocedor de siempre
   let clave = (() => { const g = storage.get(KEY_CLAVE); return pareceClave(g) ? g.trim() : null; })();
@@ -153,7 +155,7 @@ export function crearChat({ root, storage, ahora = () => new Date(), fetch: f, p
         <summary id="chat-claude-estado"></summary>
         <div id="chat-claude-cuerpo"></div>
       </details>
-      <p class="hint chat-pie">Responde con las cotizaciones de cierre de cada día (ArgentinaDatos), simula operaciones con el motor de la calculadora («consigo el oficial a 1535 y compro USDT al 2 %: ¿cómo salgo si vendo?») , contesta sobre USDT en los exchanges con los precios de CriptoYa («¿dónde está más barato el USDT?», «compro en Belo y vendo en Binance P2P») y carga la cotización de Galicia («galicia 1535»). No es una inteligencia artificial: entiende preguntas sobre oficial, blue, MEP, CCL, cripto, mayorista y tarjeta. <button type="button" class="btn ghost small" data-chat="borrar">Borrar la conversación</button></p>
+      <p class="hint chat-pie">Responde con las cotizaciones de cierre de cada día (ArgentinaDatos), simula operaciones con el motor de la calculadora («consigo el oficial a 1535 y compro USDT al 2 %: ¿cómo salgo si vendo?») , contesta sobre USDT en los exchanges con los precios de CriptoYa («¿dónde está más barato el USDT?», «compro en Belo y vendo en Binance P2P») carga la cotización de Galicia («galicia 1535») y anota tus operaciones hechas («anotá: puse 1 palo, billete a 1470, USDT al 2 %, vendí a 1680»; «en realidad gané 95 mil»). No es una inteligencia artificial: entiende preguntas sobre oficial, blue, MEP, CCL, cripto, mayorista y tarjeta. <button type="button" class="btn ghost small" data-chat="borrar">Borrar la conversación</button></p>
     </div>`;
   const log = root.querySelector('.chat-log');
   const input = root.querySelector('#chat-pregunta');
@@ -208,6 +210,21 @@ export function crearChat({ root, storage, ahora = () => new Date(), fetch: f, p
       msg.respuesta = r.ok
         ? { ok: true, frases: r.texto.split(/\n+/).map((x) => x.trim()).filter(Boolean).slice(0, 20), avisos: [], series: [], tabla: null, unidad: '', fuente: `Respondió Claude${r.usadas.length ? ' con los datos y las cuentas de Brecha' : ''}. Es una simulación: verificá los precios antes de operar.` }
         : { ok: false, frases: [r.error], avisos: [], series: [], tabla: null, unidad: '', fuente: '' };
+      ocupado = false;
+      guardar();
+      render({ bajar: true });
+      return;
+    }
+    // ¿Una operación hecha («anotá: puse 1 palo, billete a 1470, USDT al 2 %, vendí a 1680», «en realidad gané 95 mil»)?
+    const op = operaciones ? interpretarOperacion(pregunta) : null;
+    if (op) {
+      let r;
+      try {
+        if (op.tipo === 'anotar') r = responderAnotar(op, op.faltan.length ? null : operaciones.anotar(op.datos, 'chat'));
+        else if (op.tipo === 'corregir') r = responderCorregir(op, op.real === null ? null : operaciones.corregir({ real: op.real.toString(), motivo: op.motivo, cobrado: op.cobrado }));
+        else r = responderVer(op, operaciones.porDia(), operaciones.hoy(), operaciones.ayer());
+      } catch { r = { ok: false, frases: ['No pude anotarla: probá desde la pestaña Operaciones.'] }; }
+      mensajes.push({ rol: 'brecha', respuesta: { avisos: [], series: [], tabla: null, unidad: '', fuente: '', ...r } });
       ocupado = false;
       guardar();
       render({ bajar: true });
@@ -331,6 +348,7 @@ export function crearChat({ root, storage, ahora = () => new Date(), fetch: f, p
       return;
     }
     if (ev.target.closest('[data-ir-exchanges]')) { onIrAExchanges(); return; }
+    if (ev.target.closest('[data-ir-operaciones]')) { onIrAOperaciones(); return; }
     if (ev.target.closest('[data-claude="quitar"]')) { clave = null; storage.set(KEY_CLAVE, null); claude.reiniciar(); renderClaude(); return; }
     if (ev.target.closest('[data-chat="borrar"]')) {
       claude.reiniciar();
