@@ -163,7 +163,8 @@ export function calcularSimple(entrada = {}) {
     return {
       objetivoPct: g, precio, diferencia: V.minus(precio),
       margenSeguridadPct: ONE.minus(precio.times(invV)).times(HUNDRED),
-      margenPct: g === '0' ? V.div(precio).minus(ONE).times(HUNDRED) : null,
+      // precio 0 = equilibrio menor que la precisión (montos absurdos que tira la prueba de estrés): sin margen, no división por cero
+      margenPct: g === '0' && !precio.eq(0) ? V.div(precio).minus(ONE).times(HUNDRED) : null,
     };
   });
   const equilibrioVenta = objetivosPrecio[0].precio;

@@ -28,8 +28,8 @@ import { crearInicio } from './inicio.mjs';
 import { crearOperaciones } from './operaciones.mjs';
 import { interpretarOperacion } from '../chat/operaciones.mjs';
 import { ajustarConAprendido } from '../operaciones/modelo.mjs';
-import { conversionComprando, conversionVendiendo, prepararPrecios, opcionesLado, nombreExchange } from '../exchanges/arbitraje.mjs';
-import { KEY_REGISTRO, restaurarRegistro, agregarMuestra, compararExchanges, exchangesDelRegistro } from '../exchanges/registro.mjs';
+import { conversionComprando, conversionVendiendo, prepararPrecios, opcionesLado, nombreExchange, esP2P } from '../exchanges/arbitraje.mjs';
+import { KEY_REGISTRO, restaurarRegistro, agregarMuestra, compararExchanges, exchangesDelRegistro, rankingExchanges } from '../exchanges/registro.mjs';
 import { resumenDeSimple, resumenDeRuta, trazaDeSimple } from '../historial/modelo.mjs';
 import { simularRuta } from '../engine/route.mjs';
 import { rutaDesdeSimple } from '../routes/desde-simple.mjs';
@@ -966,6 +966,7 @@ function registrarMuestraUsdt() {
   // sin lugar: se olvidan las más viejas (de a un 10 %) hasta que entre
   while (!storage.trySet(KEY_REGISTRO, registroUsdt) && registroUsdt.length > 1) registroUsdt = registroUsdt.slice(Math.ceil(registroUsdt.length / 10));
   renderPromedioUsdt();
+  renderRankingUsdt();
 }
 const pctAR = (v, signo = true) => `${signo && v.gt(0) ? '+' : ''}${formatNumberAR(v.round(2), { decimals: 2, minDecimals: 2 })} %`;
 const pesosAR = (v) => `$ ${formatNumberAR(v.abs().round(2), { decimals: 2, minDecimals: 2 })}`;
@@ -1013,6 +1014,57 @@ function renderPromedioUsdt() {
   r.innerHTML = `<p data-testid="prom-venta">${frasePromedio(c.venta, c.a, c.b, 'venta')}</p>
     <p data-testid="prom-compra">${frasePromedio(c.compra, c.a, c.b, 'compra')}</p>
     <p class="hint" data-testid="prom-base">Con ${l.n} ${l.n === 1 ? 'momento guardado' : 'momentos guardados'} en ${l.dias} ${l.dias === 1 ? 'día' : 'días'}, del ${FECHA_HORA.format(new Date(l.desde))} al ${FECHA_HORA.format(new Date(l.hasta))}.${pocos} ${pie}</p>`;
+}
+
+/* ---------- Ranking de P2P por promedio (pedido 15/11/2026: "armá el ranking de P2P por promedio"): en cada momento
+   guardado, cuánto le faltó a cada uno para ser el mejor; promedio de eso (src/exchanges/registro.mjs). ---------- */
+const KEY_RANKING = 'brecha.usdt.ranking.v1';
+let rankingPref = (() => {
+  const g = storage.get(KEY_RANKING);
+  const p = { lado: 'venta', periodo: 'todo', todos: false };
+  if (g && typeof g === 'object') {
+    if (g.lado === 'compra') p.lado = 'compra';
+    if (Object.hasOwn(PERIODOS, g.periodo)) p.periodo = g.periodo;
+    p.todos = g.todos === true;
+  }
+  return p;
+})();
+/** El ranking como datos (para la caja, el chat y Claude). */
+const rankingUsdt = ({ lado = rankingPref.lado, dias = rankingPref.periodo === 'todo' ? null : Number(rankingPref.periodo), todos = rankingPref.todos } = {}) =>
+  rankingExchanges(registroUsdt, { lado, dias, ahora: new Date(), incluir: todos ? () => true : esP2P });
+function renderRankingUsdt() {
+  const el = $('#usdt-ranking');
+  if (!el) return;
+  if (!el.querySelector('details')) {
+    el.innerHTML = `<details class="prom-detalle"><summary data-testid="rank-abrir"><strong>Ranking de P2P por promedio</strong> · cuál paga más (o cobra menos) en promedio, con lo que Brecha fue guardando</summary>
+      <div class="prom-controles">
+        <div class="field"><label for="rank-lado">Para</label><select id="rank-lado"><option value="venta">Vender USDT</option><option value="compra">Comprar USDT</option></select></div>
+        <div class="field"><label for="rank-periodo">Período</label><select id="rank-periodo">${Object.entries(PERIODOS).map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select></div>
+        <label class="check"><input type="checkbox" id="rank-todos"> Sumar los que no son P2P (Belo, Fiwind…)</label>
+      </div>
+      <div id="rank-resultado" class="prom-resultado" aria-live="polite" data-testid="rank-resultado"></div></details>`;
+  }
+  $('#rank-lado').value = rankingPref.lado;
+  $('#rank-periodo').value = rankingPref.periodo;
+  $('#rank-todos').checked = rankingPref.todos;
+  const r = rankingUsdt();
+  const out = $('#rank-resultado');
+  const pie = 'En cada momento guardado se toma el mejor precio y se mide cuánto le faltó a cada uno (0 % = fue el mejor); el ranking es el promedio. Precios de CriptoYa con comisiones; en P2P el precio real depende del anunciante y del medio de pago.';
+  if (!r.ok) { out.innerHTML = `<p>${esc(r.error)}</p><p class="hint">${pie}</p>`; return; }
+  const venta = r.lado === 'venta';
+  const pocos = r.dias < 7 ? ` <strong>Todavía ${r.dias === 1 ? 'es 1 día' : `son ${r.dias} días`}: tomalo como referencia, no como promedio.</strong>` : '';
+  const filas = r.filas.map((f, k) => `<tr data-testid="rank-fila-${k}"${f.pocas ? ' class="rank-pocas"' : ''}>
+      <th scope="row">${k + 1}. ${esc(nombreExchange(f.id))}${f.pocas ? ' <span class="unit">pocas veces</span>' : ''}</th>
+      <td>${pesosAR(f.promedioPrecio)}</td>
+      <td>${f.promedioPct.abs().lt('0.005') ? 'el mejor' : pctAR(f.promedioPct)}</td>
+      <td>${f.vecesMejor} de ${f.n}</td>
+    </tr>`).join('');
+  const top = r.filas[0];
+  const contra = r.filas.find((f) => f.id === 'binancep2p' && f !== top);
+  const ejemplo = contra ? ` Frente a Binance P2P, ${esc(nombreExchange(top.id))} ${venta ? 'pagó' : 'cobró'} en promedio ${pctAR(top.promedioPct.minus(contra.promedioPct).abs(), false)} ${venta ? 'más' : 'menos'}.` : '';
+  out.innerHTML = `<p data-testid="rank-titulo"><strong>${venta ? 'Para vender USDT' : 'Para comprar USDT'}, en promedio:</strong> 1.º ${esc(nombreExchange(top.id))}.${ejemplo}</p>
+    <div class="table-wrap"><table class="breakdown rank-tabla"><thead><tr><th scope="col">Exchange</th><th scope="col">Promedio</th><th scope="col">vs. el mejor</th><th scope="col">Veces el mejor</th></tr></thead><tbody>${filas}</tbody></table></div>
+    <p class="hint" data-testid="rank-base">Con ${r.momentos} ${r.momentos === 1 ? 'momento guardado' : 'momentos guardados'} en ${r.dias} ${r.dias === 1 ? 'día' : 'días'}.${pocos} ${pie}</p>`;
 }
 
 /* ---------- Mi operativa ---------- */
@@ -1531,6 +1583,16 @@ function herramientasParaClaude() {
       },
     },
     {
+      name: 'ranking_por_promedio',
+      description: 'Ranking de exchanges por PROMEDIO del precio del USDT con lo que Brecha fue guardando (una muestra por hora cuando el usuario abre la app). En cada momento se toma el mejor precio y se mide cuánto le faltó a cada uno; promedio_vs_mejor_pct = ese promedio (0 = siempre el mejor). Por defecto sólo P2P; todos = true suma los que no son P2P. lado venta = lo que pagan por 1 USDT; compra = lo que cobran. Decí siempre en cuántos días y momentos se basa.',
+      input_schema: { type: 'object', properties: { lado: { type: 'string', enum: ['venta', 'compra'] }, dias: { type: 'number', description: 'sólo los últimos N días (opcional)' }, todos: { type: 'boolean' } } },
+      run(i) {
+        const r = rankingUsdt({ lado: i.lado === 'compra' ? 'compra' : 'venta', dias: i.dias ?? null, todos: i.todos === true });
+        if (!r.ok) return { error: r.error };
+        return { lado: r.lado, momentos: r.momentos, dias: r.dias, ranking: r.filas.map((f) => ({ exchange: nombreExchange(f.id), precio_promedio: n(f.promedioPrecio), promedio_vs_mejor_pct: n(f.promedioPct), veces_el_mejor: f.vecesMejor, momentos: f.n, pocos_momentos: f.pocas })), nota: 'Precios de CriptoYa con comisiones, guardados por Brecha en este navegador.' };
+      },
+    },
+    {
       name: 'calcular_operativa',
       description: 'Cuenta exacta de la operativa pesos → dólar billete → USDT → pesos. pct_usdt es cuánto más caro sale cada USDT en dólares (2 = cada USDT cuesta 1,02 USD). Devuelve dólares comprados, USDT recibidos, pesos cobrados, ganancia o pérdida y a qué precio de venta queda hecho. No incluye comisiones ni impuestos salvo comision_venta_pct.',
       input_schema: { type: 'object', properties: { pesos: { type: 'number' }, precio_dolar: { type: 'number', description: 'pesos por dólar al comprar' }, pct_usdt: { type: 'number', description: '% arriba del dólar que cuesta cada USDT (0 = 1 a 1)' }, precio_venta_usdt: { type: 'number', description: 'pesos por USDT al vender' }, comision_venta_pct: { type: 'number' } }, required: ['pesos', 'precio_dolar', 'pct_usdt', 'precio_venta_usdt'] },
@@ -1909,7 +1971,7 @@ function init() {
     onAbrirCalculadora: (a) => (a?.tipo === 'galicia' ? usarGaliciaEnCalculadora() : abrirEscenarioEnCalculadora(a)),
     bancos: { guardarManual: (id, v) => bancos.guardarManual(id, v), fila: (id) => bancos.fila(id), referencia: () => bancos.referencia() },
     herramientasClaude: herramientasParaClaude(),
-    exchanges: { datos: () => exchanges?.datos() ?? Promise.resolve(null), preferencias: () => exchanges?.preferencias() ?? {}, promedio: (a, b, dias) => compararExchanges(registroUsdt, a, b, { dias, ahora: new Date() }) },
+    exchanges: { datos: () => exchanges?.datos() ?? Promise.resolve(null), preferencias: () => exchanges?.preferencias() ?? {}, promedio: (a, b, dias) => compararExchanges(registroUsdt, a, b, { dias, ahora: new Date() }), ranking: (c) => rankingUsdt({ lado: c.lado, dias: c.dias, todos: c.todos }) },
   });
   bancos = crearBancos({
     root: $('#bancos'), storage, avisar,
@@ -1928,6 +1990,16 @@ function init() {
   exchanges.alCambiar(() => { opcionesUsdt.render(); renderUsdtTop(); registrarMuestraUsdt(); });
   renderUsdtTop();
   renderPromedioUsdt();
+  renderRankingUsdt();
+  $('#usdt-ranking').addEventListener('change', (ev) => {
+    const id = ev.target.id;
+    if (id === 'rank-lado') rankingPref.lado = ev.target.value === 'compra' ? 'compra' : 'venta';
+    else if (id === 'rank-periodo') rankingPref.periodo = Object.hasOwn(PERIODOS, ev.target.value) ? ev.target.value : 'todo';
+    else if (id === 'rank-todos') rankingPref.todos = ev.target.checked;
+    else return;
+    storage.set(KEY_RANKING, rankingPref);
+    renderRankingUsdt();
+  });
   $('#usdt-promedio').addEventListener('change', (ev) => {
     const id = ev.target.id;
     if (id === 'prom-a' || id === 'prom-b') promedioPref[id.slice(5)] = ev.target.value;

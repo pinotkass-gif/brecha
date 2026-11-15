@@ -54,6 +54,12 @@ export function interpretarExchanges(texto) {
   const contexto = /\b(usdt|usdc|tether|exchange|exchanges|p2p|cripto|crypto)\b/.test(t);
   const compra = /\bcompr\w*/.exec(t);
   const venta = /\bvend\w*/.exec(t);
+  // «ranking de P2P por promedio», «¿qué P2P paga más en promedio?»: con los precios que Brecha fue guardando
+  if (ids.length < 2 && (/\branking\b/.test(t) || (/\bp2p\b/.test(t) && /\b(promedi\w*|en general|normalmente)\b/.test(t)))) {
+    const n = /\bultim\w* (\d{1,3}) dias?\b/.exec(t);
+    const dias = n ? Number(n[1]) : /\bultim\w* semana\b/.test(t) ? 7 : /\bultim\w* mes\b/.test(t) ? 30 : null;
+    return { tipo: 'ranking', lado: compra && !venta ? 'compra' : 'venta', dias: dias && dias > 0 ? dias : null, todos: /\b(todos|no p2p)\b/.test(t) };
+  }
   // «¿en promedio cuánto es la diferencia entre Binance y Cocos?»: con los precios que Brecha fue guardando
   if (ids.length >= 2 && !(compra && venta) && /\b(promedi\w*|diferencia\w*|brecha|compar\w*|vs|versus|contra)\b/.test(t)) {
     const n = /\bultim\w* (\d{1,3}) dias?\b/.exec(t);
@@ -200,5 +206,16 @@ export function responderPromedio(c, cmp) {
   lado(cmp.compra, false);
   const l = cmp.venta.n ? cmp.venta : cmp.compra;
   frases.push(`Lo saqué de ${l.n} ${l.n === 1 ? 'momento guardado' : 'momentos guardados'} en ${l.dias} ${l.dias === 1 ? 'día' : 'días'} (del ${FECHA.format(new Date(l.desde))} al ${FECHA.format(new Date(l.hasta))})${c.dias ? `, de los últimos ${c.dias} días` : ''}.${l.dias < 7 ? ' Todavía son pocos días: tomalo como referencia.' : ''}`);
+  return { ...base, ok: true, frases };
+}
+
+/** «Ranking de P2P por promedio»: r = rankingExchanges(...). */
+export function responderRanking(c, r) {
+  const base = { avisos: [], series: [], tabla: null, unidad: '', fuente: 'Fuente: precios de CriptoYa con comisiones que Brecha guarda cada vez que la abrís (uno por hora como mucho, en este navegador). En cada momento se toma el mejor precio y se mide cuánto le faltó a cada uno; el ranking es el promedio.' };
+  if (!r?.ok) return { ...base, ok: false, frases: [r?.error ?? 'No tengo precios guardados.', 'Abrí Brecha seguido (por ejemplo una vez por día) y en unos días te armo el ranking por promedio.'] };
+  const venta = r.lado === 'venta';
+  const frases = [`${venta ? 'Para vender USDT' : 'Para comprar USDT'}, en promedio${c.dias ? ` (últimos ${c.dias} días)` : ''}:`];
+  r.filas.slice(0, 10).forEach((f, k) => frases.push(`${k + 1}. ${nombreExchange(f.id)}: ${pesosTxt(f.promedioPrecio)}${round(f.promedioPct.abs(), 2).eq(0) ? ', el mejor' : `, ${pctTxt(f.promedioPct)} vs. el mejor`}; fue el mejor ${f.vecesMejor} de ${f.n} veces${f.pocas ? ' (estuvo en pocos momentos)' : ''}.`));
+  frases.push(`Con ${r.momentos} ${r.momentos === 1 ? 'momento guardado' : 'momentos guardados'} en ${r.dias} ${r.dias === 1 ? 'día' : 'días'}.${r.dias < 7 ? ' Todavía son pocos días: tomalo como referencia.' : ''}`);
   return { ...base, ok: true, frases };
 }

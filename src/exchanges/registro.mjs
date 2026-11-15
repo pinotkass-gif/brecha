@@ -110,3 +110,51 @@ export function compararExchanges(registro, a, b, { dias = null, ahora = new Dat
   }
   return { ok: true, a, b, muestras: xs.length, venta, compra };
 }
+
+/**
+ * Ranking por promedio (pedido 15/11/2026: "armá el ranking de P2P por promedio"). En cada momento guardado se toma el
+ * mejor precio entre los exchanges elegidos (el que más paga al vender, el más barato al comprar) y se mide cuánto
+ * le faltó a cada uno: 0 % = fue el mejor. El ranking es el promedio de eso, sólo en los momentos en que cada uno tuvo
+ * precio. Así no se mezclan precios de días distintos (si el dólar subió, sube para todos).
+ * @param {{lado?: 'venta'|'compra', dias?: number|null, ahora?: Date, incluir?: (id: string) => boolean}} [o]
+ */
+export function rankingExchanges(registro, { lado = 'venta', dias = null, ahora = new Date(), incluir = () => true } = {}) {
+  const i = lado === 'compra' ? 1 : 0;
+  let xs = registro;
+  if (dias !== null && Number.isFinite(dias) && dias > 0) {
+    const desde = ahora.getTime() - dias * 86400e3;
+    xs = registro.filter((m) => Date.parse(m.t) >= desde);
+  }
+  const acum = new Map();
+  let momentos = 0;
+  const diasTodos = new Set();
+  for (const m of xs) {
+    const precios = Object.entries(m.p).filter(([id, par]) => incluir(id) && par[i]).map(([id, par]) => [id, toDec(par[i])]);
+    if (precios.length < 2) continue; // con uno solo no hay contra quién comparar
+    momentos += 1;
+    const dia = DIA_AR.format(new Date(m.t));
+    diasTodos.add(dia);
+    const mejor = precios.reduce((a, [, v]) => (a === null || (i === 0 ? v.gt(a) : v.lt(a)) ? v : a), null);
+    for (const [id, v] of precios) {
+      const pct = v.minus(mejor).div(mejor).times(HUNDRED); // venta: ≤ 0; compra: ≥ 0
+      const a = acum.get(id) ?? { id, n: 0, sumaPct: ZERO, sumaPrecio: ZERO, vecesMejor: 0, dias: new Set(), ultimo: null };
+      a.n += 1;
+      a.sumaPct = a.sumaPct.plus(pct);
+      a.sumaPrecio = a.sumaPrecio.plus(v);
+      if (v.eq(mejor)) a.vecesMejor += 1;
+      a.dias.add(dia);
+      a.ultimo = { t: m.t, precio: v, pct: round(pct, 4) };
+      acum.set(id, a);
+    }
+  }
+  if (!momentos) {
+    return { ok: false, error: registro.length ? 'Todavía no hay momentos guardados con al menos dos de estos exchanges con precio.' : 'Todavía no hay precios guardados: se juntan solos cada vez que abrís Brecha (uno por hora como mucho).' };
+  }
+  const filas = [...acum.values()].map((a) => ({
+    id: a.id, n: a.n, dias: a.dias.size, promedioPct: round(a.sumaPct.div(a.n), 4), promedioPrecio: round(a.sumaPrecio.div(a.n), 4),
+    vecesMejor: a.vecesMejor, pocas: a.n < momentos / 2, ultimo: a.ultimo,
+  }));
+  // Mejor primero; los que estuvieron en menos de la mitad de los momentos van al final (su promedio dice poco)
+  filas.sort((p, q) => Number(p.pocas) - Number(q.pocas) || (i === 0 ? q.promedioPct.cmp(p.promedioPct) : p.promedioPct.cmp(q.promedioPct)) || q.n - p.n);
+  return { ok: true, lado, momentos, dias: diasTodos.size, desde: xs[0]?.t ?? null, hasta: xs.at(-1)?.t ?? null, filas };
+}

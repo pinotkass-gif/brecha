@@ -826,3 +826,7 @@ html[data-plataforma="celular"] #nivel-desc { display: none; } /* en el celular,
 .ops-form-corregir .card-error, .ops-form-corregir .banner-actions { grid-column: 1 / -1; margin: 0; }
 .res-actions .anotar-hecha { order: -1; }
 .ops-dias strong { white-space: nowrap; }
+.usdt-ranking { margin-top: 10px; }
+.rank-tabla td, .rank-tabla tbody th { white-space: nowrap; }
+.rank-tabla thead th { white-space: normal; vertical-align: bottom; padding-inline: 6px; }
+.rank-pocas { opacity: .75; }

@@ -5,7 +5,7 @@ import { interpretar, EJEMPLOS, hoyAR, MERCADOS_HIST } from '../historico/pregun
 import { responder, ayuda } from '../historico/analisis.mjs';
 import { crearFuenteHistorico } from '../historico/fuente.mjs';
 import { interpretarEscenario, calcularEscenario, MERCADOS_CALCULADORA } from '../chat/escenario.mjs';
-import { interpretarExchanges, responderExchanges, responderPromedio } from '../chat/exchanges.mjs';
+import { interpretarExchanges, responderExchanges, responderPromedio, responderRanking } from '../chat/exchanges.mjs';
 import { interpretarGalicia, responderGalicia } from '../chat/bancos.mjs';
 import { interpretarOperacion, responderAnotar, responderCorregir, responderVer } from '../chat/operaciones.mjs';
 import { crearClaude, pareceClave, KEY_CLAVE, MODELO } from '../chat/claude.mjs';
@@ -243,6 +243,15 @@ export function crearChat({ root, storage, ahora = () => new Date(), fetch: f, p
     }
     // ¿USDT en los exchanges ("¿dónde está más barato el USDT?", "compro en Belo y vendo en Binance P2P")?
     const ex = exchanges ? interpretarExchanges(pregunta) : null;
+    if (ex?.tipo === 'ranking') {
+      let r;
+      try { r = responderRanking(ex, exchanges.ranking?.(ex)); } catch { r = { ok: false, frases: ['No pude leer los precios guardados.'] }; }
+      mensajes.push({ rol: 'brecha', respuesta: { avisos: [], series: [], tabla: null, unidad: '', fuente: '', ...r } });
+      ocupado = false;
+      guardar();
+      render({ bajar: true });
+      return;
+    }
     if (ex?.tipo === 'promedio') {
       let r;
       try { r = responderPromedio(ex, exchanges.promedio?.(ex.a, ex.b, ex.dias)); } catch { r = { ok: false, frases: ['No pude leer los precios guardados.'] }; }
