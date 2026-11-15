@@ -796,3 +796,11 @@ html[data-plataforma="celular"] .resumen-hoy { display: flex; flex-direction: co
 .rh-nombre { overflow-wrap: anywhere; }
 .rh-pie { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 html[data-plataforma="celular"] #nivel-desc { display: none; } /* en el celular, «Hoy» lo más arriba posible */
+
+/* Promedio entre dos exchanges (15/11/2026) */
+.prom-controles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.prom-resultado { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.prom-resultado p { margin: 0; }
+.prom-detalle > summary { cursor: pointer; font-size: 14px; }
+.prom-detalle[open] > summary { margin-bottom: 8px; }
+.prom-detalle[open] { display: flex; flex-direction: column; gap: 8px; }

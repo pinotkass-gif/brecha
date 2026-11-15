@@ -54,6 +54,12 @@ export function interpretarExchanges(texto) {
   const contexto = /\b(usdt|usdc|tether|exchange|exchanges|p2p|cripto|crypto)\b/.test(t);
   const compra = /\bcompr\w*/.exec(t);
   const venta = /\bvend\w*/.exec(t);
+  // «¿en promedio cuánto es la diferencia entre Binance y Cocos?»: con los precios que Brecha fue guardando
+  if (ids.length >= 2 && !(compra && venta) && /\b(promedi\w*|diferencia\w*|brecha|compar\w*|vs|versus|contra)\b/.test(t)) {
+    const n = /\bultim\w* (\d{1,3}) dias?\b/.exec(t);
+    const dias = n ? Number(n[1]) : /\bultim\w* semana\b/.test(t) ? 7 : /\bultim\w* mes\b/.test(t) ? 30 : null;
+    return { tipo: 'promedio', a: ids[0], b: ids[1], dias: dias && dias > 0 ? dias : null };
+  }
   // «compro en Belo y vendo en Binance P2P»: esa combinación
   if (ids.length >= 2 && compra && venta) {
     const despues = (m) => hallados.find((h) => h.pos > m.index)?.id;
@@ -167,4 +173,32 @@ export function responderExchanges(c, datos, o = {}) {
   frases.push(`De ${formatNumberAR(r.total, { decimals: 0 })} combinaciones, ${formatNumberAR(r.positivas, { decimals: 0 })} dan ganancia con estos precios (teórico: antes de impuestos y sin verificar límites, medios de pago ni plazos).`);
   if (r.filas.some((f) => f.desde.endsWith('p2p') || f.hacia.endsWith('p2p'))) frases.push(P2P);
   return { ...base, frases, accion: accion(mejor, monto, opts) };
+}
+
+const FECHA = new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+const pesosTxt = (v) => `$ ${formatNumberAR(round(v.abs(), 2), { decimals: 2, minDecimals: 2 })}`;
+const pctAbs = (v) => `${formatNumberAR(round(v.abs(), 2), { decimals: 2, minDecimals: 2 })} %`;
+
+/**
+ * Respuesta del promedio entre dos exchanges (lo que devuelve compararExchanges de src/exchanges/registro.mjs).
+ * @param {{tipo: 'promedio', a: string, b: string, dias: number|null}} c
+ */
+export function responderPromedio(c, cmp) {
+  const base = { avisos: [], series: [], tabla: null, unidad: '', fuente: 'Fuente: precios de CriptoYa con comisiones que Brecha guarda cada vez que la abrís (uno por hora como mucho, en este navegador). CriptoYa no tiene historial por exchange.' };
+  const A = nombreExchange(c.a); const B = nombreExchange(c.b);
+  if (!cmp?.ok) return { ...base, ok: false, frases: [cmp?.error ?? 'No tengo precios guardados.', `Abrí Brecha seguido (por ejemplo una vez por día) y en unos días te digo el promedio entre ${A} y ${B}.`] };
+  const frases = [];
+  const lado = (l, venta) => {
+    if (!l.n) return;
+    const p = l.promedioPct;
+    const igual = round(p.abs(), 2).eq(0);
+    frases.push(venta
+      ? (igual ? `Vendiendo USDT, ${A} y ${B} te pagaron en promedio lo mismo.` : `Vendiendo USDT, ${A} te pagó en promedio ${pctAbs(p)} ${p.gt(0) ? 'más' : 'menos'} que ${B}: ${pesosTxt(l.promedioPesos)} por USDT (con 10.000 USDT, unos ${pesosTxt(l.promedioPesos.times(10000))}). Fue de ${pctTxt(l.minPct)} a ${pctTxt(l.maxPct)}.`)
+      : (igual ? `Comprando USDT, ${A} y ${B} te cobraron en promedio lo mismo.` : `Comprando USDT, ${A} te cobró en promedio ${pctAbs(p)} ${p.gt(0) ? 'más' : 'menos'} que ${B} (${pesosTxt(l.promedioPesos)} por USDT).`));
+  };
+  lado(cmp.venta, true);
+  lado(cmp.compra, false);
+  const l = cmp.venta.n ? cmp.venta : cmp.compra;
+  frases.push(`Lo saqué de ${l.n} ${l.n === 1 ? 'momento guardado' : 'momentos guardados'} en ${l.dias} ${l.dias === 1 ? 'día' : 'días'} (del ${FECHA.format(new Date(l.desde))} al ${FECHA.format(new Date(l.hasta))})${c.dias ? `, de los últimos ${c.dias} días` : ''}.${l.dias < 7 ? ' Todavía son pocos días: tomalo como referencia.' : ''}`);
+  return { ...base, ok: true, frases };
 }

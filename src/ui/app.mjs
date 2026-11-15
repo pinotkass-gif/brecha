@@ -25,7 +25,8 @@ import { crearExchanges } from './exchanges.mjs';
 import { crearOpcionesUsdt } from './opciones-usdt.mjs';
 import { crearBancos } from './bancos.mjs';
 import { crearInicio } from './inicio.mjs';
-import { conversionComprando, conversionVendiendo, prepararPrecios, opcionesLado } from '../exchanges/arbitraje.mjs';
+import { conversionComprando, conversionVendiendo, prepararPrecios, opcionesLado, nombreExchange } from '../exchanges/arbitraje.mjs';
+import { KEY_REGISTRO, restaurarRegistro, agregarMuestra, compararExchanges, exchangesDelRegistro } from '../exchanges/registro.mjs';
 import { resumenDeSimple, resumenDeRuta, trazaDeSimple } from '../historial/modelo.mjs';
 import { simularRuta } from '../engine/route.mjs';
 import { rutaDesdeSimple } from '../routes/desde-simple.mjs';
@@ -98,6 +99,7 @@ const storage = {
 /* ---------- Estado ---------- */
 let cot = restaurar(storage.get(KEY_COT));
 let calle = restaurarCalle(storage.get(KEY_CALLE)); // blue de la calle que cargó él (o null)
+let registroUsdt = restaurarRegistro(storage.get(KEY_REGISTRO)); // precios de USDT guardados al abrir la app (uno por hora)
 let politica = restaurarPolitica(storage.get(KEY_POLITICA));
 const KEY_CAL = 'brecha.calendario.v1';
 const KEY_CONTRASTE = 'brecha.contraste.v1';
@@ -928,6 +930,77 @@ function renderResumenHoy() {
     <p class="hint rh-pie">DolarAPI${d ? ` y CriptoYa (${hora(d.at)})` : ''}. <button type="button" class="btn ghost small" data-ver-cotizaciones>Ver todas las cotizaciones</button></p>`;
 }
 
+/* ---------- Promedio entre dos exchanges (pedido 15/11/2026: "en promedio cuánto es la diferencia de cotización del
+   USDT entre Binance y Cocos"). CriptoYa sólo da el precio de ahora: Brecha guarda una muestra por hora cuando trae
+   precios (src/exchanges/registro.mjs) y promedia con eso. ---------- */
+const KEY_PROMEDIO = 'brecha.usdt.promedio.v1';
+const PERIODOS = { todo: 'Todo lo guardado', 7: 'Últimos 7 días', 30: 'Últimos 30 días', 90: 'Últimos 90 días' };
+const ID_EXCHANGE = /^[a-z0-9]{1,30}$/;
+let promedioPref = (() => {
+  const g = storage.get(KEY_PROMEDIO);
+  const p = { a: 'binance', b: 'cocoscrypto', periodo: 'todo' };
+  if (g && typeof g === 'object') {
+    if (ID_EXCHANGE.test(String(g.a))) p.a = g.a;
+    if (ID_EXCHANGE.test(String(g.b))) p.b = g.b;
+    if (Object.hasOwn(PERIODOS, g.periodo)) p.periodo = g.periodo;
+  }
+  return p;
+})();
+function registrarMuestraUsdt() {
+  const r = agregarMuestra(registroUsdt, exchanges?.datosActuales());
+  if (!r.agregada) return;
+  registroUsdt = r.registro;
+  while (registroUsdt.length > 1 && !storage.trySet(KEY_REGISTRO, registroUsdt)) registroUsdt = registroUsdt.slice(Math.ceil(registroUsdt.length / 10)); // sin lugar: se olvidan las más viejas
+  renderPromedioUsdt();
+}
+const pctAR = (v, signo = true) => `${signo && v.gt(0) ? '+' : ''}${formatNumberAR(v.round(2), { decimals: 2, minDecimals: 2 })} %`;
+const pesosAR = (v) => `$ ${formatNumberAR(v.abs().round(2), { decimals: 2, minDecimals: 2 })}`;
+const FECHA_HORA = new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+/** Frase de un lado (venta o compra) del promedio entre A y B. */
+function frasePromedio(l, a, b, lado) {
+  if (!l.n) return lado === 'venta' ? 'Vendiendo: todavía no hay momentos en que los dos paguen.' : 'Comprando: todavía no hay momentos en que los dos vendan.';
+  const A = esc(nombreExchange(a)); const B = esc(nombreExchange(b));
+  const p = l.promedioPct;
+  const igual = p.abs().lt('0.005');
+  const que = lado === 'venta'
+    ? (igual ? `${A} y ${B} te pagaron en promedio lo mismo` : `${A} te pagó en promedio <strong>${pctAR(p.abs(), false)} ${p.gt(0) ? 'más' : 'menos'}</strong> que ${B} (${pesosAR(l.promedioPesos)} por USDT; con 10.000 USDT, ≈ ${pesosAR(l.promedioPesos.times(10000))})`)
+    : (igual ? `${A} y ${B} te cobraron en promedio lo mismo` : `${A} te cobró en promedio <strong>${pctAR(p.abs(), false)} ${p.gt(0) ? 'más' : 'menos'}</strong> que ${B} (${pesosAR(l.promedioPesos)} por USDT)`);
+  const mas = lado === 'venta' ? 'pagó más' : 'fue más caro';
+  return `<strong>${lado === 'venta' ? 'Vendiendo USDT' : 'Comprando USDT'}:</strong> ${que}. Promedio de ${A}: ${pesosAR(l.promedioA)}; de ${B}: ${pesosAR(l.promedioB)}. Fue de ${pctAR(l.minPct)} a ${pctAR(l.maxPct)}; ${A} ${mas} en ${l.vecesAMas} de ${l.n} ${l.n === 1 ? 'vez' : 'veces'}.`;
+}
+let promedioArmado = false;
+function renderPromedioUsdt() {
+  const el = $('#usdt-promedio');
+  if (!el) return;
+  const actuales = exchanges?.datosActuales()?.ars?.map((f) => f.id) ?? [];
+  const ids = [...new Set([...exchangesDelRegistro(registroUsdt).map((x) => x.id), ...actuales, promedioPref.a, promedioPref.b])]
+    .sort((x, y) => nombreExchange(x).localeCompare(nombreExchange(y), 'es'));
+  const opciones = (sel) => ids.map((id) => `<option value="${esc(id)}"${id === sel ? ' selected' : ''}>${esc(nombreExchange(id))}</option>`).join('');
+  if (!promedioArmado || el.querySelectorAll('#prom-a option').length !== ids.length) {
+    const foco = document.activeElement?.closest?.('#usdt-promedio') ? document.activeElement.id : null;
+    // Cerrado por defecto: así no cambia de alto al llegar los precios (en la compu correría la calculadora de abajo)
+    const abierto = el.querySelector('details')?.open ?? false;
+    el.innerHTML = `<details class="prom-detalle"${abierto ? ' open' : ''}><summary data-testid="prom-abrir"><strong>Promedio entre dos exchanges</strong> · cuánto más (o menos) paga uno que otro por el USDT, con lo que Brecha fue guardando</summary>
+      <div class="prom-controles">
+        <div class="field"><label for="prom-a">Exchange</label><select id="prom-a">${opciones(promedioPref.a)}</select></div>
+        <div class="field"><label for="prom-b">Contra</label><select id="prom-b">${opciones(promedioPref.b)}</select></div>
+        <div class="field"><label for="prom-periodo">Período</label><select id="prom-periodo">${Object.entries(PERIODOS).map(([k, t]) => `<option value="${k}"${k === promedioPref.periodo ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
+      </div>
+      <div id="prom-resultado" class="prom-resultado" aria-live="polite" data-testid="prom-resultado"></div></details>`;
+    promedioArmado = true;
+    if (foco) $(`#${foco}`)?.focus();
+  }
+  const c = compararExchanges(registroUsdt, promedioPref.a, promedioPref.b, { dias: promedioPref.periodo === 'todo' ? null : Number(promedioPref.periodo), ahora: new Date() });
+  const r = $('#prom-resultado');
+  const pie = 'Brecha guarda los precios de CriptoYa (con comisiones) cada vez que la abrís, uno por hora como mucho, en este navegador. Cuantos más días la abras, más real es el promedio.';
+  if (!c.ok) { r.innerHTML = `<p>${esc(c.error)}</p><p class="hint">${pie}</p>`; return; }
+  const l = c.venta.n ? c.venta : c.compra;
+  const pocos = l.dias < 7 ? ` <strong>Todavía ${l.dias === 1 ? 'es 1 día' : `son ${l.dias} días`}: tomalo como referencia, no como promedio.</strong>` : '';
+  r.innerHTML = `<p data-testid="prom-venta">${frasePromedio(c.venta, c.a, c.b, 'venta')}</p>
+    <p data-testid="prom-compra">${frasePromedio(c.compra, c.a, c.b, 'compra')}</p>
+    <p class="hint" data-testid="prom-base">Con ${l.n} ${l.n === 1 ? 'momento guardado' : 'momentos guardados'} en ${l.dias} ${l.dias === 1 ? 'día' : 'días'}, del ${FECHA_HORA.format(new Date(l.desde))} al ${FECHA_HORA.format(new Date(l.hasta))}.${pocos} ${pie}</p>`;
+}
+
 /* ---------- Mi operativa ---------- */
 const esLaOperativa = () => $('#mercado-compra').value === 'blue' && $('#mercado-venta').value === 'cripto' && $('#modo-monto').value === 'ars' && $('#conversion-sentido').value === 'sobreprecio';
 /** 'simple' deja la calculadora en pesos → billete (blue) → USDT (pagando X % más) → pesos; 'completa', como siempre. */
@@ -1424,6 +1497,17 @@ function herramientasParaClaude() {
       },
     },
     {
+      name: 'promedio_entre_exchanges',
+      description: 'Diferencia PROMEDIO del precio del USDT entre dos exchanges, con los precios que Brecha fue guardando (una muestra por hora cuando el usuario abre la app; CriptoYa no tiene historial). venta = lo que pagan por 1 USDT; compra = lo que cobran. pct positivo = el exchange a paga/cobra más que b. Ids: binance, binancep2p, cocoscrypto, bybitp2p, lemoncash, belo, ripio, etc. Decí siempre en cuántos días y muestras se basa.',
+      input_schema: { type: 'object', properties: { a: { type: 'string', description: 'id del exchange (ej. binance)' }, b: { type: 'string', description: 'id del otro (ej. cocoscrypto)' }, dias: { type: 'number', description: 'sólo los últimos N días (opcional)' } }, required: ['a', 'b'] },
+      run(i) {
+        const c = compararExchanges(registroUsdt, String(i.a), String(i.b), { dias: i.dias ?? null, ahora: new Date() });
+        if (!c.ok) return { error: c.error, exchanges_guardados: exchangesDelRegistro(registroUsdt).map((x) => x.id) };
+        const lado = (l) => (l.n ? { muestras: l.n, dias: l.dias, desde: l.desde, hasta: l.hasta, promedio_pct: n(l.promedioPct), promedio_pesos_por_usdt: n(l.promedioPesos), promedio_a: n(l.promedioA), promedio_b: n(l.promedioB), min_pct: n(l.minPct), max_pct: n(l.maxPct), veces_a_mas: l.vecesAMas } : null);
+        return { a: nombreExchange(c.a), b: nombreExchange(c.b), venta: lado(c.venta), compra: lado(c.compra), nota: 'Precios de CriptoYa con comisiones, guardados por Brecha en este navegador.' };
+      },
+    },
+    {
       name: 'calcular_operativa',
       description: 'Cuenta exacta de la operativa pesos → dólar billete → USDT → pesos. pct_usdt es cuánto más caro sale cada USDT en dólares (2 = cada USDT cuesta 1,02 USD). Devuelve dólares comprados, USDT recibidos, pesos cobrados, ganancia o pérdida y a qué precio de venta queda hecho. No incluye comisiones ni impuestos salvo comision_venta_pct.',
       input_schema: { type: 'object', properties: { pesos: { type: 'number' }, precio_dolar: { type: 'number', description: 'pesos por dólar al comprar' }, pct_usdt: { type: 'number', description: '% arriba del dólar que cuesta cada USDT (0 = 1 a 1)' }, precio_venta_usdt: { type: 'number', description: 'pesos por USDT al vender' }, comision_venta_pct: { type: 'number' } }, required: ['pesos', 'precio_dolar', 'pct_usdt', 'precio_venta_usdt'] },
@@ -1759,7 +1843,7 @@ function init() {
     onAbrirCalculadora: (a) => (a?.tipo === 'galicia' ? usarGaliciaEnCalculadora() : abrirEscenarioEnCalculadora(a)),
     bancos: { guardarManual: (id, v) => bancos.guardarManual(id, v), fila: (id) => bancos.fila(id), referencia: () => bancos.referencia() },
     herramientasClaude: herramientasParaClaude(),
-    exchanges: { datos: () => exchanges?.datos() ?? Promise.resolve(null), preferencias: () => exchanges?.preferencias() ?? {} },
+    exchanges: { datos: () => exchanges?.datos() ?? Promise.resolve(null), preferencias: () => exchanges?.preferencias() ?? {}, promedio: (a, b, dias) => compararExchanges(registroUsdt, a, b, { dias, ahora: new Date() }) },
   });
   bancos = crearBancos({
     root: $('#bancos'), storage, avisar,
@@ -1775,8 +1859,17 @@ function init() {
     exchanges, bancos, getContexto: contextoOpciones, onUsar: usarOpcion, onCargarRetiro: cargarRetiro,
     onIrAManual: () => { mostrarSeccion('sec-cotizaciones'); bancos.enfocarManual(); },
   });
-  exchanges.alCambiar(() => { opcionesUsdt.render(); renderUsdtTop(); });
+  exchanges.alCambiar(() => { opcionesUsdt.render(); renderUsdtTop(); registrarMuestraUsdt(); });
   renderUsdtTop();
+  renderPromedioUsdt();
+  $('#usdt-promedio').addEventListener('change', (ev) => {
+    const id = ev.target.id;
+    if (id === 'prom-a' || id === 'prom-b') promedioPref[id.slice(5)] = ev.target.value;
+    else if (id === 'prom-periodo') promedioPref.periodo = ev.target.value;
+    else return;
+    storage.set(KEY_PROMEDIO, promedioPref);
+    renderPromedioUsdt();
+  });
   // Para «USDT: los 5 que más pagan hoy» (usa la copia si tiene menos de 5 min). Un poco después de arrancar: CriptoYa corta
   // las ráfagas y al abrir ya se piden los bancos (y, en mi operativa, la calculadora pide estos mismos precios).
   setTimeout(() => exchanges.actualizar(false), 1500);
