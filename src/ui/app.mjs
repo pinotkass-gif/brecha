@@ -950,7 +950,8 @@ function registrarMuestraUsdt() {
   const r = agregarMuestra(registroUsdt, exchanges?.datosActuales());
   if (!r.agregada) return;
   registroUsdt = r.registro;
-  while (registroUsdt.length > 1 && !storage.trySet(KEY_REGISTRO, registroUsdt)) registroUsdt = registroUsdt.slice(Math.ceil(registroUsdt.length / 10)); // sin lugar: se olvidan las más viejas
+  // sin lugar: se olvidan las más viejas (de a un 10 %) hasta que entre
+  while (!storage.trySet(KEY_REGISTRO, registroUsdt) && registroUsdt.length > 1) registroUsdt = registroUsdt.slice(Math.ceil(registroUsdt.length / 10));
   renderPromedioUsdt();
 }
 const pctAR = (v, signo = true) => `${signo && v.gt(0) ? '+' : ''}${formatNumberAR(v.round(2), { decimals: 2, minDecimals: 2 })} %`;
